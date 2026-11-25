@@ -69,6 +69,25 @@ These are the numbers a pixel-error servo loop needs; they replace guessing.
 - Servo 6: **170° = open, 10° = closed**, 46° is the pose it was shipped in.
 - No force sensing; the only closing signal is the visual one.
 
+## The wrist camera is NOT on the tool-roll link
+
+The simulation contract puts `wrist_cam` on `link5` (so it rolls with `j5`). On the
+real arm it does not: commanding `u5` from 225° to 45° moves the servo (read back
+both ways) but the wrist image is **identical** (normalised correlation 0.90 at 0°
+rotation, -0.05 at 90°). The camera is therefore mounted on the link below the
+roll — it follows `j4` (wrist pitch) but not `j5`.
+
+Consequences, both real:
+
+- The simulation should mount the camera on `link4`, otherwise the model promises a
+  view the hardware never produces.
+- The camera's optical axis is **not** the tool axis. Anything that reasons "the
+  camera points where the gripper points" (including a wrist-roll calibration)
+  is wrong on this machine.
+
+This also explains the failed jaw-alignment idea: the camera looks past the fingers
+rather than between them, and rolling the wrist does not orbit the view.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
