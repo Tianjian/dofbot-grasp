@@ -128,6 +128,40 @@ executed blind from forward kinematics.
 That conversion needs camera intrinsics and the camera-to-arm transform — i.e. the
 hand-eye calibration that the earlier experiments were trying to avoid.
 
+## Camera intrinsics (measured)
+
+From 18 hand-held views of board A, principal point fixed at the frame centre and
+only k1/k2 free; 9 views survived outlier rejection (the rest had 2.4-5.9 px
+residuals, most likely hand motion during capture):
+
+```
+fx = 1015.3   fy = 1014.9   cx = 320.0   cy = 240.0
+k1 = -0.415   k2 = +0.061   RMS = 0.838 px over 9 views
+```
+
+An unconstrained solve of the same views produced `fx = 8263` and `k3 = -1.1e6` --
+the classic planar-target degeneracy. The model is therefore deliberately small and
+the solve is seeded with `f = 0.85 * width`; results outside 0.3-3.0x the image size
+are reported as IMPLAUSIBLE rather than written out silently.
+
+## Hand-eye calibration is blocked by the field of view
+
+Eye-in-hand (AX = XB) needs the same board seen from poses with rotational
+diversity. Measured reality on this arm:
+
+- the board is fully visible at essentially one pose;
+- moving yaw by 20 deg or wrist pitch by 15 deg pushes it out of frame;
+- of 10 orbit poses only 1 kept the board, and Tsai on 5 near-identical poses
+  returned the identity matrix.
+
+The camera sits 10-15 cm above the desk, so its field of view covers roughly 9-10
+cm. A board small enough to stay in frame across poses would be 1.5-2 cm at that
+distance -- too small to print and detect reliably.
+
+Consequence: **the wrist camera cannot be calibrated against the base by moving the
+arm.** Calibrating the fixed observer camera instead (eye-to-hand: board on the desk,
+gripper parked at known TCP positions) is the practical route.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.

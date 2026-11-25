@@ -1,0 +1,48 @@
+{
+  "camera": "/dev/video0",
+  "pattern_inner_corners": [
+    6,
+    4
+  ],
+  "square_mm": 11.0,
+  "image_size": [
+    640,
+    480
+  ],
+  "views_used": 9,
+  "views_rejected": [
+    "view_01_corners.npz",
+    "view_03_corners.npz",
+    "view_04_corners.npz",
+    "view_05_corners.npz",
+    "view_06_corners.npz",
+    "view_07_corners.npz",
+    "view_16_corners.npz",
+    "view_17_corners.npz",
+    "view_18_corners.npz"
+  ],
+  "rms_reprojection_px": 0.8379,
+  "fx": 1015.327,
+  "fy": 1014.883,
+  "cx": 320.0,
+  "cy": 240.0,
+  "dist": [
+    -0.415056,
+    0.061802,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "per_view_error_px": [
+    0.806,
+    1.089,
+    0.317,
+    0.584,
+    0.465,
+    0.242,
+    0.647,
+    0.861,
+    1.021
+  ],
+  "notes": "principal point fixed at image centre; k1,k2 only; k3 fixed; tangential zero"
+}
