@@ -144,6 +144,19 @@ the classic planar-target degeneracy. The model is therefore deliberately small 
 the solve is seeded with `f = 0.85 * width`; results outside 0.3-3.0x the image size
 are reported as IMPLAUSIBLE rather than written out silently.
 
+## Observer camera intrinsics (measured)
+
+The fixed USB observer (`/dev/video2`) was calibrated from 15 hand-held views of
+board B (9x6 squares of 20 mm), principal point free:
+
+```
+fx = 639.9   fy = 640.2   cx = 281.9   cy = 290.4
+k1 = -0.073  k2 = +0.074  RMS = 0.652 px over 15 views
+```
+
+Unlike the wrist camera, this solve is well conditioned: the board fills 50-70% of
+the frame and is tilted 30-40 deg in every direction.
+
 ## Hand-eye calibration is blocked by the field of view
 
 Eye-in-hand (AX = XB) needs the same board seen from poses with rotational
