@@ -66,7 +66,14 @@ These are the numbers a pixel-error servo loop needs; they replace guessing.
 
 ## Gripper
 
-- Servo 6: **170° = open, 10° = closed**, 46° is the pose it was shipped in.
+**The direction is inverted relative to what the numbers suggest:** servo 6 at a
+**low** angle (~20 deg) has the fingers **apart**, and at a **high** angle (~140 deg)
+they are **together**. Commanded 175 it stops at ~140, which is the closed limit;
+commanded 10 it reports ~12, which is fully open.
+
+Every "close" in this work that ended at ~12 deg was therefore *opening* the jaws,
+and every "open" that stalled at ~140 was *closing* them -- which is why several
+grasp attempts pushed the cube away instead of holding it.
 - No force sensing; the only closing signal is the visual one.
 
 ## The wrist camera is NOT on the tool-roll link
