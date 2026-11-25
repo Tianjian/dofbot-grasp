@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--image", required=True)
     ap.add_argument("--servo", default="90.1,95.7,19.6,3.3,45.1")
     ap.add_argument("--roi", default="140,40,400,175", help="x0,y0,x1,y1 of the clean region")
+    ap.add_argument("--vmin", type=float, default=105.0, help="brightness floor for the arm")
+    ap.add_argument("--smax", type=float, default=80.0, help="saturation ceiling for the arm")
     ap.add_argument("--init-eye", default="0.37,0.18,0.50", help="metres, base frame")
     ap.add_argument("--init-lookat", default="0.0,0.03,0.16")
     ap.add_argument("--width", type=int, default=320)
@@ -63,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     # bright = arm, dark = ceiling, inside the ROI only
     # the arm is bright *and* desaturated; the white wall is bright too, so the
     # saturation term plus a tight ROI keeps the wall and the yellow banner out
-    real_arm = (hsv[..., 2] > 105) & (hsv[..., 1] < 80) & roi_mask
+    real_arm = (hsv[..., 2] > args.vmin) & (hsv[..., 1] < args.smax) & roi_mask
     if real_arm.sum() < 200:
         print(f"error: only {int(real_arm.sum())} arm pixels in the ROI; widen it", file=sys.stderr)
         return 2
@@ -131,12 +133,21 @@ def main(argv: list[str] | None = None) -> int:
         cache["p"] = p.copy()
         return -iou
 
-    p0 = np.array(
-        [
-            *[float(v) for v in args.init_eye.split(",")],
-            *[float(v) for v in args.init_lookat.split(",")],
-        ]
-    )
+    lookat0 = np.array([float(v) for v in args.init_lookat.split(",")])
+    # coarse grid over the camera position with the lookat held at the arm centre:
+    # Nelder-Mead alone drops into local minima when the initial guess is far off
+    best = (0.0, None)
+    for gx in np.arange(0.15, 0.80, 0.10):
+        for gy in np.arange(-0.55, 0.60, 0.10):
+            for gz in np.arange(0.20, 0.85, 0.10):
+                rendered = arm_mask(np.array([gx, gy, gz]), lookat0)
+                inter = np.logical_and(rendered, real_arm).sum()
+                union = np.logical_or(rendered, real_arm).sum()
+                v = float(inter) / max(float(union), 1.0)
+                if v > best[0]:
+                    best = (v, np.array([gx, gy, gz]))
+    print(f"grid best IoU = {best[0]:.3f} at eye {np.round(best[1] * 1000, 0).tolist()} mm")
+    p0 = np.array([*best[1], *lookat0])
     print(f"start IoU = {-cost(p0):.3f}")
     res = minimize(
         cost, p0, method="Nelder-Mead", options={"maxiter": 900, "xatol": 1e-3, "fatol": 1e-4}

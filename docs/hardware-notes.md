@@ -198,6 +198,20 @@ the mask is not the arm.
 So model fitting on this view needs either a real segmentation cue (a dark backdrop
 behind the arm, or the black gripper as the target) or a marker on the robot.
 
+A black backdrop was mounted behind the arm. The contrast is now usable -- at
+V>150 the mask is the arm and nothing else -- but the fit still stops at IoU ~0.19,
+for two reasons the bench cannot fix:
+
+- the camera has no working exposure control (V4L2 reports -1 and ignores `set`),
+  so the "black" board is auto-exposed to V~120-150 and the threshold that separates
+  arm from board is unstable between frames;
+- the arm is only ~4.7k pixels at 320x240 and the highlight-biased mask covers a
+  fraction of it, capping IoU well below 1 even with a perfect pose.
+
+The deterministic alternative is a target on the robot (board taped to the gripper,
+AX=XB): it needs no segmentation and its accuracy is set by chessboard corners, not
+by exposure.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
