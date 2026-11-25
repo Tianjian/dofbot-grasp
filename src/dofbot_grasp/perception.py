@@ -414,11 +414,25 @@ def _score_component(points_yx: np.ndarray, shape: tuple[int, int], cfg: DetectC
     }
 
 
+def normalize_white_balance(bgr: np.ndarray) -> np.ndarray:
+    """Gray-world white balance, so HSV thresholds survive auto-WB drift.
+
+    The USB camera used on the bench has no working manual white balance: when a
+    large yellow object fills the frame it swings the whole scene cyan and a
+    fixed hue threshold stops matching. Dividing each channel by its own mean
+    removes the cast, which makes the cube's hue stable across frames.
+    """
+    f = np.asarray(bgr, dtype=np.float32)
+    means = f.reshape(-1, 3).mean(axis=0) + 1e-6
+    return np.clip(f * (means.mean() / means), 0.0, 255.0).astype(np.uint8)
+
+
 def detect_cube(
     bgr: np.ndarray,
     cube_size_m: float | None = None,
     intrinsics: Intrinsics | None = None,
     cfg: DetectConfig | None = None,
+    white_balance: bool = False,
     **overrides,
 ) -> CubeObservation | None:
     """Find a single cube in a BGR frame; return ``None`` when none is found.
@@ -435,6 +449,9 @@ def detect_cube(
     cfg : DetectConfig, optional
         Threshold configuration; individual fields can be overridden through
         ``**overrides`` (e.g. ``hsv_lower=...``).
+    white_balance : bool, optional
+        Apply :func:`normalize_white_balance` before thresholding. Recommended
+        for live USB cameras whose auto white balance drifts.
     """
     frame = np.asarray(bgr)
     if frame.ndim != 3 or frame.shape[2] < 3 or frame.size == 0:
@@ -451,7 +468,7 @@ def detect_cube(
     if f_px <= 0.0:
         raise ValueError("focal length f_px must be positive")
 
-    mask = _build_mask(frame, params)
+    mask = _build_mask(normalize_white_balance(frame) if white_balance else frame, params)
     if mask is None:
         return None
     if mask.sum() > params.max_mask_frac * mask.size:

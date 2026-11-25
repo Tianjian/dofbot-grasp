@@ -167,3 +167,21 @@ def test_connected_components_handles_objects_touching_the_border() -> None:
     comps = connected_components(mask)
     assert len(comps) == 2
     assert sum(len(c) for c in comps) == int(mask.sum())
+
+
+def test_gray_world_restores_detection_under_a_colour_cast() -> None:
+    """Auto white balance on the bench camera turns the scene cyan; the cube must
+    still be found (hue ~39 drifts past any fixed threshold without this)."""
+    from dofbot_grasp.perception import detect_cube, normalize_white_balance
+
+    frame = np.full((240, 320, 3), 200, dtype=np.uint8)
+    frame[80:160, 120:200] = (40, 200, 215)  # a yellow-ish patch, BGR
+    cyan = frame.astype(np.int16)
+    cyan[..., 0] = np.clip(cyan[..., 0] + 60, 0, 255)  # push blue -> cyan cast
+    cast = cyan.astype(np.uint8)
+
+    balanced = normalize_white_balance(cast)
+    assert balanced.shape == frame.shape
+    obs = detect_cube(cast, white_balance=True)
+    assert obs is not None
+    assert abs(obs.center_px[0] - 160) < 12 and abs(obs.center_px[1] - 120) < 12
