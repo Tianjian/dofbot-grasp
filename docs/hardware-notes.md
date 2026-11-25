@@ -175,6 +175,29 @@ Consequence: **the wrist camera cannot be calibrated against the base by moving 
 arm.** Calibrating the fixed observer camera instead (eye-to-hand: board on the desk,
 gripper parked at known TCP positions) is the practical route.
 
+## The simulation now carries the real meshes
+
+`sim/dofbot_se.xml` renders the URDF's STL meshes (`sim/meshes/`, 16 MB) as visual
+geoms, while the original primitives stay in place for collision (alpha 0, still
+`contype=1`). Physics is unchanged: the reference grasp lifts 104.9 mm with 8
+finger contacts, the wedge still prints PASS / gate exit 0, and the fault run FAIL /
+exit 1. The primitive-only model is kept as `dofbot_se_primitives.xml`.
+
+With the real geometry the rendered silhouette is now the machine, which is what
+the model-based camera fit needs.
+
+## Silhouette fitting needs a segmentation the bench does not provide
+
+Matching the rendered arm to the observer image currently fails, and not because of
+the model: in the observer view **94% of the region of interest passes the
+"bright and desaturated" test**, i.e. the arm barely differs from the bright ceiling
+and wall behind it. A coarse grid over camera positions (x 0.1-0.75, y -0.5..0.5,
+z 0.25-0.8 m) reaches IoU 0.158 at best -- no camera pose explains the mask, because
+the mask is not the arm.
+
+So model fitting on this view needs either a real segmentation cue (a dark backdrop
+behind the arm, or the black gripper as the target) or a marker on the robot.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
