@@ -60,11 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: cannot open {args.camera}", file=sys.stderr)
         return 2
 
-    flags = (
-        cv2.CALIB_CB_ADAPTIVE_THRESH
-        | cv2.CALIB_CB_NORMALIZE_IMAGE
-        | cv2.CALIB_CB_FAST_CHECK
-    )
+    flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_FAST_CHECK
     objpoints: list[np.ndarray] = []
     imgpoints: list[np.ndarray] = []
     save_dir = Path(args.save_frames) if args.save_frames else None
@@ -74,9 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     shape = None
     last = 0.0
     t0 = time.time()
-    print(
-        f"looking for a {pattern[0]}x{pattern[1]} inner-corner board on {args.camera} ..."
-    )
+    print(f"looking for a {pattern[0]}x{pattern[1]} inner-corner board on {args.camera} ...")
     while len(objpoints) < args.shots:
         if time.time() - t0 > args.timeout_s:
             print(
@@ -140,9 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             per_view.append(float("nan"))
             continue
         proj, _ = cv2.projectPoints(obj, rvec, tvec, K, dist)
-        per_view.append(
-            round(float(np.linalg.norm(img - proj.reshape(-1, 2), axis=1).mean()), 4)
-        )
+        per_view.append(round(float(np.linalg.norm(img - proj.reshape(-1, 2), axis=1).mean()), 4))
 
     fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
     report = {

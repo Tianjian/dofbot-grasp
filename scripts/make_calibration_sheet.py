@@ -169,8 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     ax.text(
         105,
         8,
-        "geometry: page 210 x 297 mm, drawn in millimetres; "
-        "squares are exact by construction",
+        "geometry: page 210 x 297 mm, drawn in millimetres; squares are exact by construction",
         ha="center",
         va="center",
         fontsize=5.8,
