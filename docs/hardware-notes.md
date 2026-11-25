@@ -262,6 +262,29 @@ view, FK gives TCP `(0, 3, 397) mm` with the tool axis `(0, 0.02, 1)`.
 Gripper: full 0-180 deg travel in free air with tracking within 0.4 deg, 170 deg =
 open, 10 deg = closed.
 
+## The graspable envelope is much smaller than the reachable one
+
+Sampling the kinematics over the real joint limits separates two things that look
+alike until you try to plan a grasp:
+
+| TCP height | reachable radius | radius reachable with the tool pointing down (axis_z < -0.8) |
+|---|---|---|
+| 0 mm | 271 mm | **239 mm** |
+| 60 mm | 282 mm | 233 mm |
+| 100 mm | 290 mm | 216 mm |
+| 120 mm | - | 203 mm |
+| 140 mm | 288 mm | 173 mm |
+| 150 mm+ | 287 mm | **none** |
+
+So the arm can *touch* a point at radius 234 mm, but at that radius the tool can only
+point down when the TCP is below ~40 mm. Plan an approach from 100 mm above such a
+point and inverse kinematics has no solution -- it returns a joint-limit pose with
+the tool pointing up, which is exactly the "j2 barely leaves vertical" symptom.
+
+Practical rule: keep a top-down grasp target inside ~20 cm of the base, where the
+envelope is generous (216 mm of radius at 100 mm height). Beyond ~24 cm radius no
+top-down grasp exists at any useful height.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
