@@ -239,6 +239,29 @@ identical arm poses (identical j4) reported the cube at (305,242), (253,132) and
 (393,250). A static cube cannot do that, so those detections are different yellow
 objects. The mount must be checked against gate-confirmed observations.
 
+## Controller verification: angle, direction, zero
+
+Every servo was commanded +15 deg from a common pose, read back, and photographed
+with the observer camera:
+
+| servo | commanded | read back | error | observed motion | FK prediction |
+|---|---|---|---|---|---|
+| j1 (base yaw) | 105.4 | 105.1 | -0.4 | whole arm swings about vertical | dx -48 mm |
+| j2 (shoulder) | 110.7 | 109.0 | -1.7 | upper arm and gripper rise | dz +45 mm |
+| j3 (elbow) | 36.6 | 34.9 | -1.7 | forearm and gripper rise | dz +50 mm |
+| j4 (wrist pitch) | 64.1 | 63.0 | -1.1 | gripper tilts up | dz +32 mm |
+| j5 (tool roll) | 149.7 | 149.3 | -0.4 | only the gripper rotates, arm still | displacement 0 |
+
+No joint moved opposite to the model, and j5 producing no TCP motion is exactly what
+the kinematics predicts -- so the servo -> joint mapping, including the vendor's
+internal S2/S3/S4 reversal, matches this machine.
+
+Zero pose (`u = [90, 90, 90, 90, 135]`): the arm stands vertically in the observer
+view, FK gives TCP `(0, 3, 397) mm` with the tool axis `(0, 0.02, 1)`.
+
+Gripper: full 0-180 deg travel in free air with tracking within 0.4 deg, 170 deg =
+open, 10 deg = closed.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
