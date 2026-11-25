@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dofbot-grasp"
+version = "0.1.0"
+description = "Wrist-camera grasp controller for the Yahboom DOFBOT SE, validated in MuJoCo before touching hardware."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Tianjian", email = "chentianjian@foxmail.com" }]
+keywords = [
+  "robotics",
+  "dofbot",
+  "grasping",
+  "wrist-camera",
+  "mujoco",
+  "visual-servoing",
+  "robot-arm",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["numpy>=1.23"]
+
+[project.optional-dependencies]
+sim = ["mujoco>=3.0"]
+demo = ["mujoco>=3.0", "Pillow>=9.0"]
+real = ["opencv-python>=4.8", "pyserial>=3.5", "PyYAML>=6.0"]
+dev = ["pytest>=7.0", "ruff>=0.4", "mypy>=1.0", "PyYAML>=6.0"]
+
+[project.scripts]
+dofbot-grasp = "dofbot_grasp.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Tianjian/dofbot-grasp"
+Issues = "https://github.com/Tianjian/dofbot-grasp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dofbot_grasp"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+extend-exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "PTH", "RUF"]
+# Style-only rules that fight array code or add churn without safety:
+ignore = [
+  "RUF005",  # "use [*a, ...]" rewrites numpy broadcasting expressions incorrectly
+  "RUF046",  # explicit int() casts are documentation here
+  "RUF059",  # tuple unpacking with unused names is intentional
+  "SIM105",  # try/except/pass is clearer than contextlib.suppress in these paths
+  "SIM108",  # ternaries are not always more readable
+  "PTH123",  # builtin open() is fine
+]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "serial.*", "yaml.*", "mujoco.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
