@@ -163,9 +163,8 @@ def cmd_collect(args: argparse.Namespace) -> int:
                     "corner_spread_px": float(corners[..., 0].std()),
                 }
             )
-            print(
-                f"pose {idx}: accepted ({len(views)} total) spread={views[-1]['corner_spread_px']:.0f}px"
-            )
+            spread_px = views[-1]["corner_spread_px"]
+            print(f"pose {idx}: accepted ({len(views)} total) spread={spread_px:.0f}px")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
