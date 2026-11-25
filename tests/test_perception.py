@@ -185,3 +185,22 @@ def test_gray_world_restores_detection_under_a_colour_cast() -> None:
     obs = detect_cube(cast, white_balance=True)
     assert obs is not None
     assert abs(obs.center_px[0] - 160) < 12 and abs(obs.center_px[1] - 120) < 12
+
+
+def test_pale_patch_of_the_right_hue_is_rejected_by_saturation() -> None:
+    """A washed-out background patch matches the hue band but is not a cube.
+
+    Measured on the bench camera: a real painted cube blob averages S~178, the
+    pale desk mat averages S~104, so a blob-level saturation floor separates them
+    where a per-pixel threshold cannot.
+    """
+    from dofbot_grasp.perception import detect_cube
+
+    frame = np.full((240, 320, 3), 210, dtype=np.uint8)
+    frame[60:180, 90:230] = (150, 195, 205)  # pale, low-saturation "mat"
+    assert detect_cube(frame, min_blob_saturation=140.0) is None
+
+    frame[60:180, 90:230] = (30, 190, 235)  # saturated painted cube
+    obs = detect_cube(frame, min_blob_saturation=140.0)
+    assert obs is not None
+    assert abs(obs.center_px[0] - 160) < 12

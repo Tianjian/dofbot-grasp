@@ -64,6 +64,10 @@ class DetectConfig:
     max_area_frac: float = 0.5
     #: Reject blobs whose area / rotated-rect-area is below this.
     min_rectangularity: float = 0.50
+    #: Reject blobs whose *mean* saturation is below this (0 disables).  A pale
+    #: desk-mat patch can match the hue band; a painted cube is far more
+    #: saturated (178 vs 104 measured on the bench camera).
+    min_blob_saturation: float = 0.0
     #: Reject blobs whose long/short side ratio exceeds this.
     max_aspect: float = 2.0
     #: Apply a 3x3 open+close before component labelling (suppresses speckle).
@@ -414,6 +418,30 @@ def _score_component(points_yx: np.ndarray, shape: tuple[int, int], cfg: DetectC
     }
 
 
+def cv2_hsv(bgr: np.ndarray) -> np.ndarray:
+    """BGR -> HSV in OpenCV convention (H 0-179) without importing cv2.
+
+    The module deliberately stays NumPy-only so it can be unit tested without a
+    camera stack; this reproduces ``cv2.cvtColor(x, cv2.COLOR_BGR2HSV)``.
+    """
+    f = np.asarray(bgr, dtype=np.float32) / 255.0
+    b, g, r = f[..., 0], f[..., 1], f[..., 2]
+    maxc = f.max(axis=-1)
+    minc = f.min(axis=-1)
+    delta = maxc - minc
+    h = np.zeros_like(maxc)
+    nz = delta > 1e-6
+    rmax = nz & (maxc == r)
+    gmax = nz & (maxc == g) & ~rmax
+    bmax = nz & (maxc == b) & ~rmax & ~gmax
+    h[rmax] = (60.0 * ((g[rmax] - b[rmax]) / delta[rmax])) % 360.0
+    h[gmax] = 60.0 * ((b[gmax] - r[gmax]) / delta[gmax]) + 120.0
+    h[bmax] = 60.0 * ((r[bmax] - g[bmax]) / delta[bmax]) + 240.0
+    h = h / 2.0  # OpenCV uses 0-179
+    sat = np.where(maxc > 1e-6, delta / np.maximum(maxc, 1e-6) * 255.0, 0.0)
+    return np.stack([h, sat, maxc * 255.0], axis=-1)
+
+
 def normalize_white_balance(bgr: np.ndarray) -> np.ndarray:
     """Gray-world white balance, so HSV thresholds survive auto-WB drift.
 
@@ -468,7 +496,8 @@ def detect_cube(
     if f_px <= 0.0:
         raise ValueError("focal length f_px must be positive")
 
-    mask = _build_mask(normalize_white_balance(frame) if white_balance else frame, params)
+    prepared = normalize_white_balance(frame) if white_balance else frame
+    mask = _build_mask(prepared, params)
     if mask is None:
         return None
     if mask.sum() > params.max_mask_frac * mask.size:
@@ -476,6 +505,18 @@ def detect_cube(
     components = connected_components(mask)
     if not components:
         return None
+    if params.min_blob_saturation > 0.0:
+        # A pale background patch can match the hue band but never the
+        # saturation a painted cube has (measured 178 vs 104 on the bench).
+        hsv = cv2_hsv(prepared)
+        keep = []
+        for points in components:
+            ys, xs = points[:, 0], points[:, 1]
+            if float(hsv[ys, xs, 1].mean()) >= params.min_blob_saturation:
+                keep.append(points)
+        components = keep
+        if not components:
+            return None
 
     best = None
     best_score = -np.inf
