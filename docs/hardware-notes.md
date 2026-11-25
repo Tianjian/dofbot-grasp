@@ -291,6 +291,21 @@ Practical rule: keep a top-down grasp target inside ~20 cm of the base, where th
 envelope is generous (216 mm of radius at 100 mm height). Beyond ~24 cm radius no
 top-down grasp exists at any useful height.
 
+## The real fingertip is ~56 mm below the TCP point
+
+The URDF tool offset places the TCP 50 mm along link5's +Z, and our model used that
+value. On the machine, closing the gripper and lowering it until the tips touch the
+desk gives FK `TCP z = 56 mm` at first contact -- i.e. **fingertips ≈ TCP − 56 mm**,
+not the ~0 mm that the naive reading suggests.
+
+That single number explains a run of failed grasps: commanding "TCP down to 22 mm"
+drove the fingertips 34 mm *below* the desk, so the fingers pressed past the cube and
+closed on air. Grasping a 30 mm cube needs the fingertips at roughly 8 mm, i.e.
+**TCP ≈ 64 mm**.
+
+Gripper travel is also narrower than the servo range: commanded 175 deg it stops at
+140 deg open, and closes to about 12 deg. Treat the usable opening as ~140 deg.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
