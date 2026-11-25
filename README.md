@@ -116,6 +116,8 @@ docs/
                       calibration, timing, acceptance, abort
   control-api.md      module map, config keys, how to fake a bus/camera
   prior-art.md        line-level analysis of the two earlier repos
+  hardware-notes.md   values measured on a real DOFBOT SE (serial, polarity,
+                      image->joint gains, gripper, what is still unmeasured)
 ```
 
 ## Hardware notes (read before wiring anything)
@@ -143,7 +145,10 @@ acceptance tests, and abort/rollback rules.
 
 ## Status and limitations
 
-- Simulation is validated; **the real robot is not**. Parameters marked
+- Simulation is validated; the real arm is now driven over serial and the joint
+  polarity, look pose, image→joint gains and gripper direction are measured
+  ([`docs/hardware-notes.md`](docs/hardware-notes.md)). **The grasp itself has not
+  been executed yet**: the camera→TCP offset is uncalibrated. Parameters marked
   `[待实测]` in the runbook still need a bench measurement.
 - The reference motion is scripted, not visually servoed. A closed loop on the
   cube's image offset is the next step for hardware.
