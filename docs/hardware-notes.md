@@ -108,6 +108,26 @@ Caveat seen in the same run: a blocked servo also stops following large commands
 against the cube). Motion routines must treat "measured != commanded" as an event,
 not as something to keep retrying.
 
+## The camera cannot watch the approach
+
+Measured while lowering the arm onto the cube at `j1≈93`:
+
+| TCP z | cube in view? | apparent width |
+|---|---|---|
+| 105.9 mm | yes | 219 px |
+| 101.5 mm | yes | 226 px |
+| 95.9 mm | **no** | — |
+| 92.6 … 53.4 mm | no | — |
+
+The cube leaves the frame after roughly **10 mm of descent**, because the camera
+(sitting below the roll joint, looking past the fingers) pans forward as the arm
+comes down. So a purely visual approach-and-grasp is not possible on this mount:
+the target must be located once, converted into the base frame, and the descent
+executed blind from forward kinematics.
+
+That conversion needs camera intrinsics and the camera-to-arm transform — i.e. the
+hand-eye calibration that the earlier experiments were trying to avoid.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
