@@ -212,6 +212,33 @@ The deterministic alternative is a target on the robot (board taped to the gripp
 AX=XB): it needs no segmentation and its accuracy is set by chessboard corners, not
 by exposure.
 
+## Wrist camera mount (solved from the measured geometry)
+
+Using the three numbers measured with a caliper against the link4 flange --
+23 mm back from the flange face, 50 mm lateral, optical axis along the arm -- the
+transform is:
+
+```
+t_link4_cam = (-50.85, +50.0, 0.0) mm      (the flange sits at x = -73.85 mm)
+optical axis = link4 -x                     (i.e. along the arm, away from the base)
+```
+
+This is consistent with every qualitative observation on the machine: at q = 0
+link4's -x points up, and the wrist camera does look at the ceiling there; rotating
+the wrist roll (j5) does not change the view because the camera is on link4.
+
+An enumeration over the remaining discrete choices (lateral axis, optical axis among
++x/-x/+y/-y/+z/-z, and four rolls around it) scores each candidate by how tightly the
+same cube back-projects to one point across eight arm poses. The winner is the one
+above: 14-24 mm spread, and the recovered cube sits at (1, 128, 15) mm in the base
+frame.
+
+It is **not yet validated**: reprojecting that cube into the eight frames has an rms
+error of 143 px, and the reason is the input data, not the model -- three nearly
+identical arm poses (identical j4) reported the cube at (305,242), (253,132) and
+(393,250). A static cube cannot do that, so those detections are different yellow
+objects. The mount must be checked against gate-confirmed observations.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
