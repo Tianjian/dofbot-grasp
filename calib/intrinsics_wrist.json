@@ -5,44 +5,43 @@
     4
   ],
   "square_mm": 11.0,
+  "views": 20,
+  "rms_reprojection_px": 1.0576,
   "image_size": [
     640,
     480
   ],
-  "views_used": 9,
-  "views_rejected": [
-    "view_01_corners.npz",
-    "view_03_corners.npz",
-    "view_04_corners.npz",
-    "view_05_corners.npz",
-    "view_06_corners.npz",
-    "view_07_corners.npz",
-    "view_16_corners.npz",
-    "view_17_corners.npz",
-    "view_18_corners.npz"
-  ],
-  "rms_reprojection_px": 0.8379,
-  "fx": 1015.327,
-  "fy": 1014.883,
-  "cx": 320.0,
-  "cy": 240.0,
+  "fx": 1009.199,
+  "fy": 1016.64,
+  "cx": 269.752,
+  "cy": 245.712,
   "dist": [
-    -0.415056,
-    0.061802,
+    -0.495488,
+    0.509159,
     0.0,
     0.0,
     0.0
   ],
   "per_view_error_px": [
-    0.806,
-    1.089,
-    0.317,
-    0.584,
-    0.465,
-    0.242,
-    0.647,
-    0.861,
-    1.021
-  ],
-  "notes": "principal point fixed at image centre; k1,k2 only; k3 fixed; tangential zero"
+    0.6253,
+    0.5922,
+    0.5679,
+    0.6277,
+    1.0322,
+    0.6348,
+    2.3534,
+    1.7684,
+    0.2691,
+    1.0939,
+    0.6626,
+    1.1909,
+    1.0058,
+    0.5682,
+    0.6379,
+    0.4109,
+    0.4215,
+    0.3919,
+    0.5889,
+    0.4722
+  ]
 }

@@ -135,9 +135,15 @@ only k1/k2 free; 9 views survived outlier rejection (the rest had 2.4-5.9 px
 residuals, most likely hand motion during capture):
 
 ```
-fx = 1015.3   fy = 1014.9   cx = 320.0   cy = 240.0
-k1 = -0.415   k2 = +0.061   RMS = 0.838 px over 9 views
+fx = 1009.2   fy = 1016.6   cx = 269.8   cy = 245.7
+k1 = -0.495   k2 = +0.509   RMS = 1.06 px over 20 views
 ```
+
+The principal point matters here: the first calibration held ``cx, cy`` at the frame
+centre to stabilise the solve, and a later run with it free puts ``cx`` at **269.8**,
+i.e. 50 px left of centre. That is a 1.7 deg systematic error in every ray, which is
+several millimetres at the 15 cm working distance. The fixed-principal-point
+convention is now opt-in (``--fix-principal-point``) rather than the default.
 
 An unconstrained solve of the same views produced `fx = 8263` and `k3 = -1.1e6` --
 the classic planar-target degeneracy. The model is therefore deliberately small and
