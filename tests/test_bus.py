@@ -46,10 +46,14 @@ class FakeSerial:
 
 
 def servo_reply(position: int, servo_id: int, ext_type: int = 0x0A) -> bytes:
-    """Firmware reply for a servo read: FF FB len type H L id checksum."""
+    """Firmware reply for a servo read: FF FB len type H L (0x30+id) checksum.
+
+    The third data byte echoes the id byte of the read request (``0x30 + id``),
+    which is what the real controller sends (verified on hardware).
+    """
     high, low = (position >> 8) & 0xFF, position & 0xFF
     ext_len = 6
-    payload = [high, low, servo_id, 0]
+    payload = [high, low, 0x30 + servo_id, 0]
     payload[-1] = (ext_len + ext_type + sum(payload[:-1])) & 0xFF
     return bytes([0xFF, 0xFB, ext_len, ext_type] + payload)
 
@@ -235,7 +239,9 @@ def test_build_read_frame_byte_exact() -> None:
 
 def _make_serial_bus():
     fake = FakeSerial()
-    bus = SerialBus(port="/dev/fake", serial_factory=lambda p, b, t: fake)
+    bus = SerialBus(
+        port="/dev/fake", serial_factory=lambda p, b, t: fake, discard_first_reply=False
+    )
     return bus, fake
 
 

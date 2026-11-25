@@ -155,3 +155,15 @@ def test_min_area_rect_and_hull_on_rotated_square() -> None:
 def test_invalid_frame_raises() -> None:
     with pytest.raises(ValueError):
         detect_cube(np.zeros((10, 10), dtype=np.uint8))
+
+
+def test_connected_components_handles_objects_touching_the_border() -> None:
+    """A cube at the image edge must not raise (found on a real camera frame)."""
+    from dofbot_grasp.perception import connected_components
+
+    mask = np.zeros((48, 64), dtype=bool)
+    mask[40:, 0:10] = True  # bottom-left corner
+    mask[:5, 60:] = True  # top-right corner
+    comps = connected_components(mask)
+    assert len(comps) == 2
+    assert sum(len(c) for c in comps) == int(mask.sum())

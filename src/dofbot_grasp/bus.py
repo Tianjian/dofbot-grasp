@@ -155,8 +155,14 @@ def servo_angle_to_pwm(servo_id: int, angle_deg: float) -> int:
 
 
 def pwm_to_servo_angle(servo_id: int, pwm: int) -> float:
-    """Inverse of :func:`servo_angle_to_pwm` (raw/logical angle, 0-180 / 0-270)."""
+    """Inverse of :func:`servo_angle_to_pwm` (raw/logical angle, 0-180 / 0-270).
+
+    PWM 0 (or a value below the documented floor) means the servo did not report
+    a position; it must not be turned into a plausible-looking negative angle.
+    """
     sid = int(servo_id)
+    if int(pwm) < (380 if sid == 5 else 900):
+        raise SerialProtocolError(f"servo {sid} reported no position (pwm={int(pwm)})")
     if sid == 5:
         return (270.0 - 0.0) * (float(pwm) - 380.0) / (3700.0 - 380.0)
     return (180.0 - 0.0) * (float(pwm) - 900.0) / (3100.0 - 900.0)
@@ -350,11 +356,19 @@ class SerialBus:
         timeout: float = SERVO_TIMEOUT_S,
         serial_factory: Callable[..., object] | None = None,
         read_retries: int = 3,
+        boot_settle_s: float = 1.2,
+        discard_first_reply: bool = True,
     ):
         self.port = str(port)
         self.baudrate = int(baudrate)
         self.timeout = float(timeout)
         self.read_retries = int(read_retries)
+        # Opening the port toggles DTR, which resets the on-board controller.
+        # Give it time to boot, then drop whatever the boot printed.
+        self.boot_settle_s = float(boot_settle_s)
+        # The real controller answers the first request after a gap with a stale
+        # or empty frame; ask twice and keep the second answer.
+        self.discard_first_reply = bool(discard_first_reply)
         if serial_factory is None:
             try:  # guarded: pyserial is not required for pure control tests
                 import serial  # type: ignore
@@ -365,11 +379,25 @@ class SerialBus:
             self._serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
         else:
             self._serial = serial_factory(self.port, self.baudrate, self.timeout)
+        if self.boot_settle_s > 0:
+            time.sleep(self.boot_settle_s)
+        self._drain_input()
         self._gripper_deg = 90.0
         self._last_joints = np.zeros(N_JOINTS, dtype=float)
         self.write_count = 0
 
     # -- low level ---------------------------------------------------------
+    def _drain_input(self) -> None:
+        reset = getattr(self._serial, "reset_input_buffer", None)
+        if callable(reset):
+            reset()
+            return
+        try:  # pragma: no cover - older pyserial
+            while self._serial.in_waiting:  # type: ignore[attr-defined]
+                self._serial.read(1)
+        except Exception:
+            pass
+
     def _write(self, data: bytes) -> None:
         self._serial.write(data)
         self._serial.flush()
@@ -424,13 +452,29 @@ class SerialBus:
         for sid in range(1, 6):
             frame = build_read_frame(sid)
             last_error: Exception | None = None
-            for _ in range(max(1, self.read_retries)):
+            for attempt in range(max(1, self.read_retries)):
                 try:
+                    # a late reply from the previous request would otherwise be
+                    # mistaken for this one (one-frame lag)
+                    self._drain_input()
                     self._write(frame)
-                    time.sleep(0.001)
+                    time.sleep(0.005)
+                    if attempt == 0 and self.discard_first_reply:
+                        # This board's first reply after a gap is unreliable
+                        # (0 or a stale value). Discard it and ask once more.
+                        self._read_reply()
+                        continue
                     ext_type, data = self._read_reply()
                     if ext_type != 0x0A:  # FUNC_UART_SERVO
                         raise SerialProtocolError(f"unexpected reply type 0x{ext_type:02X}")
+                    if len(data) < 3:
+                        raise SerialProtocolError(f"short servo reply: {data!r}")
+                    echoed = data[2]
+                    if echoed != (0x30 + sid):
+                        # a late reply from the previous request; do not attribute it
+                        raise SerialProtocolError(
+                            f"reply for servo 0x{echoed:02X} while reading {sid}"
+                        )
                     position = (data[0] << 8) | data[1]
                     angle = pwm_to_servo_angle(sid, position)
                     if sid in SERVO_REVERSED_IDS:  # Arm_Lib.py lines 401-402

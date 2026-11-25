@@ -195,7 +195,7 @@ class UsbCamera:
         self.index = int(index)
         self.width = int(width)
         self.height = int(height)
-        self._cap = cv2.VideoCapture(self.index)
+        self._cap: cv2.VideoCapture | None = cv2.VideoCapture(self.index)
         if not self._cap.isOpened():
             self._cap.release()
             raise RuntimeError(f"could not open USB camera index {self.index}")
@@ -224,14 +224,18 @@ class UsbCamera:
         return self._intrinsics
 
     def read(self) -> np.ndarray:
-        ok, frame = self._cap.read()
+        cap = self._cap
+        if cap is None:
+            raise RuntimeError("camera is closed")
+        ok, frame = cap.read()
         if not ok or frame is None:
             raise RuntimeError("USB camera read failed")
         return frame
 
     def release(self) -> None:
-        if self._cap is not None:
-            self._cap.release()
+        cap = self._cap
+        if cap is not None:
+            cap.release()
             self._cap = None
 
     def __enter__(self) -> UsbCamera:

@@ -236,6 +236,10 @@ def connected_components(mask: np.ndarray, max_components: int = 64) -> list[np.
                     if dy == 0 and dx == 0:
                         continue
                     ny, nx = y + dy, x + dx
+                    # check bounds BEFORE indexing: an object touching the image
+                    # border used to raise IndexError on real frames
+                    if ny < 0 or ny >= h or nx < 0 or nx >= w:
+                        continue
                     if not visited[ny, nx] and padded[ny + 1, nx + 1]:
                         visited[ny, nx] = True
                         stack.append((ny, nx))
@@ -374,7 +378,7 @@ def _build_mask(bgr: np.ndarray, cfg: DetectConfig) -> np.ndarray | None:
 def _score_component(points_yx: np.ndarray, shape: tuple[int, int], cfg: DetectConfig):
     """Return a candidate dict if the component looks like the cube, else None."""
     h_img, w_img = shape
-    comp_area = len(points_yx)
+    comp_area = int(len(points_yx))
     if comp_area < cfg.min_area_px:
         return None
     if comp_area > cfg.max_area_frac * h_img * w_img:
