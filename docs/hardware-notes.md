@@ -88,6 +88,26 @@ Consequences, both real:
 This also explains the failed jaw-alignment idea: the camera looks past the fingers
 rather than between them, and rolling the wrist does not orbit the view.
 
+## Contact can be felt through the servos
+
+There is no force sensor, but a stall is visible in the position read-back. Driving
+`j2` down in 3° steps and comparing the commanded angle with the measured one:
+
+| phase | commanded vs measured |
+|---|---|
+| free air | tracks within ±0.4° |
+| approaching the cube | lags −1.7°, −3.0°, −3.6°, −5.1°, −6.8°, −9.4° |
+
+The lag grows monotonically once the finger meets something, so a threshold of
+≈5–6° is a usable "contact" signal. Contact was flagged when FK put the TCP at
+z ≈ 24 mm, against a 30 mm cube — i.e. the TCP height model agrees with reality to
+within ~5–10 mm.
+
+Caveat seen in the same run: a blocked servo also stops following large commands
+(the gripper was commanded from 12° to 163° and stalled at 95° while pressed
+against the cube). Motion routines must treat "measured != commanded" as an event,
+not as something to keep retrying.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
