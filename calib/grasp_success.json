@@ -1,0 +1,17 @@
+{
+  "servo": [
+    115.9,
+    56.6,
+    50.6,
+    3.8,
+    135.0,
+    137.2
+  ],
+  "tcp_mm": [
+    -74.5,
+    153.8,
+    84.6
+  ],
+  "gripper": 137.2,
+  "note": "cube held between the jaws, lifted clear of the desk"
+}

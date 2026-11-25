@@ -275,6 +275,35 @@ view, FK gives TCP `(0, 3, 397) mm` with the tool axis `(0, 0.02, 1)`.
 Gripper: full 0-180 deg travel in free air with tracking within 0.4 deg, 170 deg =
 open, 10 deg = closed.
 
+## First successful grasp on the real robot
+
+Observed from the fixed camera (`calib/grasp_success.png`): the cube is held between
+the jaws and lifted clear of the desk, and it stays there -- the servo read-back is
+identical (137.3 -> 137.2 deg) after a 3 s hold.
+
+The pose that worked:
+
+```
+u = [115.9, 56.6, 50.6, 3.8, 135.0, 137.2]     (servo 6 = 137 closed)
+TCP (base frame) = (-74.5, 153.8, 84.6) mm
+```
+
+Two things made the difference, both of which had been wrong before:
+
+1. **servo 6 direction**: ~20 deg opens the jaws, ~140 deg closes them. Earlier runs
+   had these inverted, so every "close" was actually opening.
+2. **the cube had to be seated *between* the open jaws while the arm stayed still** --
+   closing at the right height with the cube merely underneath pushes it aside,
+   because the fingers pivot inward rather than translating.
+
+So the mechanics, the serial path, the joint mapping and the grasp action all work.
+What is still missing for an unattended run is the last few centimetres of
+positioning: the cube had to be placed by hand, because nothing on this platform yet
+measures the cube's position in the base frame to better than a couple of
+centimetres (the observer sees it but not its depth; the wrist camera looks along the
+arm axis). A hand-eye calibration with a board mounted on the gripper is the
+remaining piece.
+
 ## The graspable envelope is much smaller than the reachable one
 
 Sampling the kinematics over the real joint limits separates two things that look
