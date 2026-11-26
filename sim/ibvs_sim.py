@@ -139,6 +139,43 @@ def _tip_and_axis(model, data):
     return data.xpos[l5].copy() + FINGERTIP_Z * axis, axis
 
 
+def move_tip(model, data, q, delta, gain=1.6, max_deg=2.0):
+    """Translate the tool tip by ``delta`` (metres, world) with a damped 3x3 solve."""
+    tip0, _ = _tip_and_axis(model, data)
+    J = np.zeros((3, 3))
+    eps = np.radians(1.0)
+    for k in range(3):
+        qt = q.copy()
+        qt[k] += eps
+        for j, v in zip(range(5), qt, strict=True):
+            data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")]] = v
+        mujoco.mj_forward(model, data)
+        J[:, k] = (_tip_and_axis(model, data)[0] - tip0) / np.degrees(eps)
+    for j, v in zip(range(5), q, strict=True):
+        data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")]] = v
+    mujoco.mj_forward(model, data)
+    lam = 1e-2 * float(np.trace(J @ J.T)) / 3.0
+    dq = J.T @ np.linalg.solve(J @ J.T + lam * np.eye(3), np.asarray(delta, float))
+    q[:3] += np.radians(np.clip(dq * gain, -max_deg, max_deg))
+    return True
+
+
+def move_tip_to(model, data, q, target_xyz, max_iters=60):
+    """Closed-loop tip translation; re-anchors each step because the servos sag."""
+    for _ in range(max_iters):
+        tip, _ = _tip_and_axis(model, data)
+        err = np.asarray(target_xyz, float) - tip
+        if np.linalg.norm(err) < 0.006:
+            return True
+        for k in range(3):
+            q[k] = float(data.qpos[k])
+        move_tip(model, data, q, err * 0.5)
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
+    return np.linalg.norm(np.asarray(target_xyz) - _tip_and_axis(model, data)[0]) < 0.020
+
+
 def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=40):
     """Lower the tip to ``z_target`` in FK closed loop.
 
@@ -285,11 +322,27 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     if verbose:
         print(f"  jaw axis aligned: j5 = {np.degrees(j5):.1f} deg")
 
-    # ---- phase 2: descend to the grasp height (FK closed loop) -------------
-    # The cube legitimately leaves the frame as the hand closes in, so the descent is
-    # FK-driven; vision only aligned it. This mirrors the plan for the real arm.
-    if not descend_until(model, data, q, TIP_STOP_Z):
-        return {"ok": False, "reason": "descent did not reach the target height"}
+    # ---- phase 2: side entry ------------------------------------------------
+    # A cube on a table is grasped on two opposite faces, and the wrist camera looks
+    # down the tool axis, so a straight descent buries the gripper in its own view and
+    # disturbs the cube on contact. Instead: go down beside the cube, then slide in
+    # sideways so the jaws straddle two faces while the camera stays above.
+    cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+    cube_xyz = data.xpos[cube_body].copy()
+    l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
+    jaw = data.xmat[l5].reshape(3, 3) @ np.array([1.0, 0.0, 0.0])
+    jaw[2] = 0.0
+    jaw /= np.linalg.norm(jaw)
+    stand_off = 0.035                      # clear of the cube before sliding in
+    hover = cube_xyz - jaw * stand_off
+    hover[2] = 0.050                       # fingertip just above the cube's mid-height
+    if not move_tip_to(model, data, q, hover):
+        return {"ok": False, "reason": "could not reach the side-entry hover point"}
+    # slide in along the jaw axis at the cube's mid-height
+    enter = hover + jaw * stand_off
+    enter[2] = 0.012
+    if not move_tip_to(model, data, q, enter):
+        return {"ok": False, "reason": "lateral entry did not reach the cube"}
 
     # ---- phase 3: close and lift ------------------------------------------
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]))

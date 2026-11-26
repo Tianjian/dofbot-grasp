@@ -92,14 +92,33 @@ def main():
     S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
     shoot(f"ALIGN j5={__import__('numpy').degrees(j5):.0f}deg")
 
-    for step in range(40):
+    cub = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+    cube_xyz = data.xpos[cub].copy()
+    l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
+    jaw = data.xmat[l5].reshape(3, 3) @ np.array([1.0, 0.0, 0.0])
+    jaw[2] = 0.0
+    jaw /= np.linalg.norm(jaw)
+    hover = cube_xyz - jaw * 0.035
+    hover[2] = 0.050
+    for k in range(40):
         tip, _ = S._tip_and_axis(model, data)
-        shoot(f"DESCEND step{step} tip_z={tip[2]*1000:.0f}mm")
-        if tip[2] <= S.TIP_STOP_Z:
+        shoot(f"HOVER k{k} tip=({tip[0]*1000:.0f},{tip[1]*1000:.0f},{tip[2]*1000:.0f})")
+        if np.linalg.norm(hover - tip) < 0.007:
             break
-        for k in range(3):
-            q[k] = float(data.qpos[k])
-        S.descend_step(model, data, q, dz=-0.008)
+        for j in range(3):
+            q[j] = float(data.qpos[j])
+        S.move_tip(model, data, q, (hover - tip) * 0.5)
+        S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
+    enter = hover + jaw * 0.035
+    enter[2] = 0.012
+    for k in range(40):
+        tip, _ = S._tip_and_axis(model, data)
+        shoot(f"ENTER k{k} tip=({tip[0]*1000:.0f},{tip[1]*1000:.0f},{tip[2]*1000:.0f})")
+        if np.linalg.norm(enter - tip) < 0.007:
+            break
+        for j in range(3):
+            q[j] = float(data.qpos[j])
+        S.move_tip(model, data, q, (enter - tip) * 0.5)
         S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
 
     shoot("CLOSE")
