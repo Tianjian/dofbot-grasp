@@ -32,8 +32,8 @@ MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
 TIP_STOP_Z = 0.016  # reachable minimum for this pose (12.5 mm) plus margin
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
-OPEN_L, OPEN_R = 0.008, -0.008  # the two finger slides, +ve opens each
-CLOSE_L, CLOSE_R = 0.0068, 0.0068   # +6.8 mm each -> inner faces +-13.65 mm
+GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm
+GRIP_CLOSE = 0.14  # 8 deg swing -> inner faces +-13.7 mm, 1.3 mm interference on a 30 mm cube
 
 
 def render(model, data, renderer, cam="wrist_cam"):
@@ -88,10 +88,10 @@ def identify_jacobian(model, data, renderer, q, probe_deg=4.0):
         for sgn in (+1.0, -1.0):
             qt = q.copy()
             qt[idx] += np.radians(sgn * probe_deg)
-            servos(model, data, np.array([qt[0], qt[1], qt[2], qt[3], qt[4], OPEN_L, OPEN_R]))
+            servos(model, data, np.array([qt[0], qt[1], qt[2], qt[3], qt[4], GRIP_OPEN]))
             d = detect_cube(render(model, data, renderer))
             deltas.append(np.array(d["centre"]) if d else None)
-        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
         if deltas[0] is None or deltas[1] is None:
             return None
         cols.append((deltas[0] - deltas[1]) / (2.0 * probe_deg))
@@ -122,7 +122,7 @@ def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=40):
             q[k] = float(data.qpos[k])
         before = tip[2]
         descend_step(model, data, q, dz=dz * gain)
-        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
         after = _tip_and_axis(model, data)[0][2]
         if after >= before - 1e-4:          # did not go down: push harder
             gain = min(gain * 1.8, 10.0)
@@ -204,7 +204,7 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     q = np.array([0.0, 0.55, 0.9, 1.0, 1.0])
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
-    ctrl = np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R])
+    ctrl = np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN])
     data.ctrl[:] = ctrl
     mujoco.mj_forward(model, data)
     servos(model, data, ctrl, max_steps=1500)
@@ -241,7 +241,7 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
         q[0] += np.radians(dq[0])
         q[1] += np.radians(dq[1])
         q[2] += np.radians(dq[2])
-        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
     else:
         return {"ok": False, "reason": "centre did not converge", "trace": trace}
 
@@ -252,11 +252,11 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
         return {"ok": False, "reason": "descent did not reach the target height"}
 
     # ---- phase 3: close and lift ------------------------------------------
-    servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], CLOSE_L, CLOSE_R]))
+    servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]))
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
     z_before = float(data.xpos[cube_body][2])
     q[2] += np.radians(25.0)  # lift
-    servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], CLOSE_L, CLOSE_R]), max_steps=1500)
+    servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]), max_steps=1500)
     z_after = float(data.xpos[cube_body][2])
     return {
         "ok": z_after > z_before + 0.02,

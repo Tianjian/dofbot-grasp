@@ -48,7 +48,7 @@ def main():
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     data.qpos[-7:-4] = [SEED[0], SEED[1], S.CUBE_Z]
-    S.servos(model, data, np.array([*q, S.OPEN_L, S.OPEN_R]), max_steps=1500)
+    S.servos(model, data, np.array([*q, S.GRIP_OPEN]), max_steps=1500)
 
     def shoot(tag):
         a = label(make_scene(model, data, renderer, "wrist_cam"), f"wrist: {tag}")
@@ -75,7 +75,7 @@ def main():
             break
         dq = np.clip(-S.LAMBDA * np.linalg.pinv(J) @ e, -S.MAX_STEP_DEG, S.MAX_STEP_DEG)
         q[:3] += np.radians(dq)
-        S.servos(model, data, np.array([*q, S.OPEN_L, S.OPEN_R]))
+        S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
 
     for step in range(40):
         tip, _ = S._tip_and_axis(model, data)
@@ -85,17 +85,17 @@ def main():
         for k in range(3):
             q[k] = float(data.qpos[k])
         S.descend_step(model, data, q, dz=-0.008)
-        S.servos(model, data, np.array([*q, S.OPEN_L, S.OPEN_R]))
+        S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
 
     shoot("CLOSE")
-    S.servos(model, data, np.array([*q, S.CLOSE_L, S.CLOSE_R]))
+    S.servos(model, data, np.array([*q, S.GRIP_CLOSE]))
     for k in range(6):
         shoot(f"CLOSE hold {k}")
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
     z0 = float(data.xpos[cube_body][2])
     q[2] += np.radians(25.0)
     for k in range(10):
-        S.servos(model, data, np.array([*q, S.CLOSE_L, S.CLOSE_R]), max_steps=120)
+        S.servos(model, data, np.array([*q, S.GRIP_CLOSE]), max_steps=120)
         shoot(f"LIFT {k}")
     z1 = float(data.xpos[cube_body][2])
     writer.release()

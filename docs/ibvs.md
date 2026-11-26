@@ -31,6 +31,24 @@ So the controller consumes only the tracker's centroid and area
 | descent stop | fingertip z <= 12 mm (FK) | area saturates at ~7 % because the camera looks along the tool axis and the cube sinks below the view as the hand closes |
 | descent is FK-only | yes | the cube legitimately leaves the frame; vision only aligns, as planned for the real arm |
 
+## Gripper kinematics, matching the official URDF
+
+The DOFBOT-SE URDF drives the jaws as **revolute** joints, with the second one
+declared as
+
+```xml
+<mimic joint="Rlink1_Joint" multiplier="-1" offset="0"/>
+```
+
+so a single servo (j6) moves both. The simulation now mirrors that: two hinge joints
+about y with pivots at z = 40 mm, tips at z = 88 mm, and a MuJoCo joint equality
+`q_right = -q_left` standing in for the URDF mimic (the same trick the Robotiq 2F-85
+and other URDF grippers need, since `mimic` is not portable across simulators).
+The model therefore has **6 actuators**, one per real servo, instead of 7.
+
+An 8 deg swing moves each tip 6.7 mm inward: inner faces go from +-20.45 mm open to
++-13.7 mm closed, clamping a 30 mm cube with 1.3 mm of interference.
+
 ## Gripper geometry, taken from the mesh
 
 `link5.STL` contains three plates of **21.3 x 3.0 x 47.9 mm** centred at
@@ -65,6 +83,10 @@ to be **re-anchored to the achieved angles** each iteration (the servos hold ~1.
 of static error under gravity), the stop threshold must be **reachable** (12 mm was
 0.5 mm below the arm's limit, so it oscillated forever), and the descent is FK-driven
 because the cube legitimately leaves the frame.
+
+With the revolute jaws the descent now stops at 17 mm because a **fifth contact**
+appears -- the jaws meeting the cube -- so the approach needs a little more lateral
+clearance before the final descent.
 
 The **close still does not retain the cube**: the video shows the jaws arriving at the
 cube, but the cube stays on the table during the lift. Jaw interference is 1.35 mm per
