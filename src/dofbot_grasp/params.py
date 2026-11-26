@@ -85,9 +85,9 @@ class GraspParams:
     # Table plane used when back-projecting a pixel to a 3-D point.
     table_z_m: float = 0.015
     #: jaw slide at fully shut in the simulated model
-    sim_jaw_travel_m: float = 0.0159
+    sim_jaw_travel_m: float = 0.0113   # 25 mm inner face -> 13.7 mm on a 30 mm cube
     #: stop descending once the cube has moved this far in the wrist frame
-    cube_shift_abort_px: float = 6.0
+    cube_shift_abort_px: float = 14.0
 
 
 @dataclass(frozen=True)

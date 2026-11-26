@@ -26,6 +26,7 @@ from dofbot_grasp.controller import grasp  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
+FPS = 30.0   # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)
 W, H = 480, 360
 
 
@@ -43,7 +44,7 @@ def main() -> int:
     ap.add_argument("--jaw-offset", type=float, default=0.0)
     args = ap.parse_args()
 
-    writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), 8.0, (W * 2, H))
+    writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W * 2, H))
     model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=240, width=320)
@@ -93,7 +94,10 @@ def main() -> int:
                 log=lambda m: state.update(phase=m.strip()[:28]),
             )
             state["phase"] = f"done ok={res.get('ok')} {res.get('reason', '')}"
-            grab()
+            # hold the final state for a moment so the clip ends on the result instead of
+            # cutting off mid-motion
+            for _ in range(int(FPS * 1.2)):
+                grab()
             print(f"  {state['seed']}: {res}")
     finally:
         mujoco.mj_step = real_step
