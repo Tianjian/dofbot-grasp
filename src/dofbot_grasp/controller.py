@@ -204,6 +204,25 @@ def centre(
     return False
 
 
+def _solve_pixel_step(J: np.ndarray, err: np.ndarray, pose: dict[int, float]) -> np.ndarray:
+    """Pixel error -> joint step, skipping joints already on a limit.
+
+    Leaving a saturated joint in the solve wastes the whole step on it: with j4 pinned at
+    -90 deg the y error sat at 23 px for fifty iterations while nothing moved.
+    """
+    dq = -GRASP.gain * np.linalg.pinv(J) @ err
+    for _ in range(3):
+        for k in range(J.shape[1]):
+            lo = -JOINTS.offsets_deg[k + 1]
+            hi = JOINTS.servo_range_deg[k + 1] - JOINTS.offsets_deg[k + 1]
+            qk = pose[k + 1] - JOINTS.offsets_deg[k + 1]
+            if (qk <= lo + 0.5 and dq[k] < 0) or (qk >= hi - 0.5 and dq[k] > 0):
+                J = J.copy()
+                J[:, k] = 0.0
+                dq = -GRASP.gain * np.linalg.pinv(J) @ err
+    return np.clip(dq, -GRASP.max_step_deg, GRASP.max_step_deg)
+
+
 def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarray | None:
     """2 x 3 pixel-per-degree Jacobian of a *known* world point.
 
@@ -215,7 +234,7 @@ def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarr
     if base is None:
         return None
     cols = []
-    for k in range(3):
+    for k in range(4):  # j4 is needed: these cube positions are a long reach away
         probe = dict(pose)
         probe[k + 1] += GRASP.probe_deg
         moved = io.project(point_m, probe)

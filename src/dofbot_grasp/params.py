@@ -74,7 +74,7 @@ class GraspParams:
     # is better than above: at 20-40 mm the jaws only touch the top face and lift nothing.
     fingertip_grasp_z_m: float = 0.010
     # Image-space servoing.
-    deadband_px: float = 8.0   # ~6 mm at grasp range; the jaws tolerate ~10 mm
+    deadband_px: float = 8.0  # ~6 mm at grasp range; the jaws tolerate ~10 mm
     max_step_deg: float = 2.0
     gain: float = 0.5
     # Per-step joint steps used to identify the image Jacobian.
