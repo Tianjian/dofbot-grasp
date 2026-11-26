@@ -20,17 +20,13 @@ is backed by a measurement taken at the time.
 
 ## Blocking
 
-**1. Two mount definitions disagree, and one cannot work.**
+**1. (resolved) A second mount definition disagreed, and was retired.**
 
-| source | camera position | optical axis |
-|---|---|---|
-| `calib/wrist_mount.json` | `(-50.9, +50.0, 0) mm` in link4 | `+x` in link4 |
-| `params.MOUNT` (used by the controller) | `(-58.4, -57.6, -0.7) mm` in link4 | link5 `+z`, the tool axis, rolled 180 deg |
-
-Tested against the same wrist frame: `params.MOUNT` back-projects the cube onto the table,
-while the `calib/wrist_mount.json` model produces no intersection at all -- its ray runs
-parallel to the table. The calib file is a stale hand-eye attempt. It has to be retired or
-the two reconciled, because a run wired to the wrong one aims tens of millimetres off.
+`calib/wrist_mount.json` put the camera at `(-50.9, +50.0, 0) mm` looking along link4 `+x`,
+against `params.MOUNT` at `(-58.4, -57.6, -0.7) mm` along the tool axis. Tested on the same
+wrist frame, `params.MOUNT` back-projects the cube onto the table while the other model
+produces no intersection at all -- its ray runs parallel to the table. That file and the
+hand-eye script that generated it are **deleted**; `params.MOUNT` is the only definition.
 
 **2. The motion phases are not connected.** `scripts/run_ibvs_real.py` has the bus wrapper,
 the geometry, the guards and a `--dry-run` planner, but nothing runs `controller.grasp`

@@ -13,8 +13,8 @@ q1..q4 = u - 90 deg        (u = 90 is the vertical / neutral pose)
 q5     = u - 135 deg       (270 deg of travel)
 ```
 
-`sim/ibvs_sim.py` carries `servo_to_joint`, `joint_to_servo`, `jaw_from_servo6` and
-`servo6_from_jaw` so a command can move between the two conventions in one call. The
+`dofbot_grasp.params` carries `servo_to_joint` and `joint_to_servo`, so a command can
+move between the two conventions in one call. The
 zero pose `u = [90, 90, 90, 90, 135]` maps to `q = 0` and is the pose the real arm
 stands in when parked.
 
@@ -53,6 +53,14 @@ different -- the real arm folded high, the simulated one low -- but that is the 
 cameras being in different places, not a kinematic difference: the numbers above are the
 same to 0.0 mm. Any visual joint check has to fix the viewpoint first, otherwise it
 measures the camera, not the arm.
+
+## Reference images
+
+| file | what it settles |
+|---|---|
+| `sim/observer_view_match.png` | the observer camera's viewpoint against the real cell |
+| `sim/sim2real_pose_check.png` | why image comparison is not a kinematics check: the two cameras sit in different places, so the pictures differ while the numbers agree to 0.0 mm |
+| `sim/gripper_jaw_axis.png` | the jaws separate along link5 **y**, not x -- one is edge-on, the other faces the cube as the photographs do |
 
 ## Response
 

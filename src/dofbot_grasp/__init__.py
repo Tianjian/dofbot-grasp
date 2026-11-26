@@ -8,7 +8,7 @@ pipeline.
 Importing the package only requires NumPy: MuJoCo, OpenCV, pyserial and PyYAML
 are imported lazily by the concrete sim/real/CLI adapters.
 
-See ``dofbot_grasp/sim/INTERFACE.md`` for the fixed sim/real contract and
+See ``docs/controller-architecture.md`` for the fixed sim/real contract and
 ``dofbot_grasp/docs/control-api.md`` for the module map and config keys.
 """
 

@@ -1,7 +1,7 @@
 # DOFBOT SE grasp control API
 
 Control stack for the 5-DOF DOFBOT SE desktop arm, implementing the fixed
-sim/real contract in [`sim/INTERFACE.md`](../sim/INTERFACE.md).
+sim/real contract in [`docs/controller-architecture.md`](controller-architecture.md).
 
 * Pure modules (`kinematics`, `perception`, `camera`, `bus`, `pipeline`) import
   **NumPy + stdlib only**. OpenCV, pyserial, MuJoCo and PyYAML are imported
@@ -32,7 +32,7 @@ dofbot-grasp/
 │   └── cli.py           python -m dofbot_grasp.cli sim|real --config x.yaml
 ├── tests/               pytest suite (70 tests, mocks only)
 ├── docs/control-api.md  this file
-├── sim/                 MuJoCo model + INTERFACE.md (owned by sim workstream)
+├── sim/                 MuJoCo model, grasp trial, recording
 └── harness/             roboharness TaskProtocol wiring (owned by harness workstream)
 ```
 

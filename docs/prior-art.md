@@ -330,7 +330,8 @@ neither repo contains a single measurement (no torque, no backlash, no repeatabi
    link5 is a sentence: "安装在Link5末端，朝向前方" (`FACE_TRACKING_README.md:34`). The URDF has no camera
    link or frame. Before any control law: measure the camera pose relative to the wrist centre and the
    gripper pinch point, and calibrate intrinsics. *Note (our own repo, not the priors):*
-   `sim/INTERFACE.md` says the wrist cam "looks along the gripper approach axis (+X of link5)",
+   The project's earlier interface note said the wrist cam "looks along the gripper approach
+   axis (+X of link5)",
    while `sim/dofbot_se.xml` mounts it at `pos="0.030 0 0.040"`, `xyaxes="1 0 0 0 -1 0"`
    — i.e. offset sideways and **looking down +Z of link5**. Those are not the same axis; pin it down before
    the mount is printed.

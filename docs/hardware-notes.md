@@ -194,7 +194,7 @@ gripper parked at known TCP positions) is the practical route.
 geoms, while the original primitives stay in place for collision (alpha 0, still
 `contype=1`). Physics is unchanged: the reference grasp lifts 104.9 mm with 8
 finger contacts, the wedge still prints PASS / gate exit 0, and the fault run FAIL /
-exit 1. The primitive-only model is kept as `dofbot_se_primitives.xml`.
+exit 1.
 
 With the real geometry the rendered silhouette is now the machine, which is what
 the model-based camera fit needs.

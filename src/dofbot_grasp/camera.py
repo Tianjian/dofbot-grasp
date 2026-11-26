@@ -1,6 +1,6 @@
 """Camera abstractions for the wrist-mounted DOFBOT camera.
 
-Contract (see ``dofbot_grasp/sim/INTERFACE.md``): a camera is anything with
+Contract (see ``docs/controller-architecture.md``): a camera is anything with
 
     read() -> np.ndarray  # BGR image, shape (H, W, 3), uint8
 
@@ -11,7 +11,7 @@ by itself it raises ``RuntimeError`` on ``read()``, rather than silently
 returning a black frame that perception could mis-detect.
 
 The wrist camera is mounted on link5 exactly as in the fixed sim/real contract
-(``dofbot_grasp/sim/INTERFACE.md`` / ``sim/dofbot_se.xml``)::
+(``docs/controller-architecture.md`` / ``sim/dofbot_se.xml``)::
 
     <camera name="wrist_cam" pos="0.035 0 0.010" quat="0 1 0 0" fovy="75"/>
 

@@ -17,8 +17,6 @@ and the servo bus are swapped.
 > distance between them -- the number that decides whether the jaws straddle the cube or
 > shove it. All four grasp, lifting **49-53 mm**.
 >
-> Earlier kinematic demo: [`sim/grasp_demo.mp4`](sim/grasp_demo.mp4) — same motion with
-> the fingers held open as a deliberate fault case.
 >
 > **All measured numbers, real and simulated, are in [`RESULTS.md`](RESULTS.md).**
 
@@ -81,11 +79,9 @@ python -m pip install -e ".[dev,sim]"
 pytest -q
 
 # reference grasp in MuJoCo (headless)
-MUJOCO_GL=egl python sim/run_grasp_sim.py --out /tmp/grasp
 
 # re-record the demo video
 python -m pip install -e ".[demo]"
-MUJOCO_GL=egl python sim/record_grasp.py
 ```
 
 ### Verify with roboharness (optional but recommended)
@@ -189,7 +185,7 @@ acceptance tests, and abort/rollback rules.
 只替换相机与总线两个实现；MuJoCo 模型直接从真实 URDF 生成，因此仿真里验证过的阈值搬到真机含义不变。
 
 - 仿真结果：抬起 **107.99 mm**、8 个接触；roboharness 验证 **PASS/exit 0**，故障注入 **FAIL/exit 1**
-- 演示视频：[`sim/grasp_demo.mp4`](sim/grasp_demo.mp4)
+- 演示视频：[`sim/controller_sim.mp4`](sim/controller_sim.mp4)
 - 真机部署：[`docs/deploy-runbook.md`](docs/deploy-runbook.md)（含串口帧格式、S5 零位、手眼标定、时序与回退）
 - 旧仓库分析：[`docs/prior-art.md`](docs/prior-art.md)
 

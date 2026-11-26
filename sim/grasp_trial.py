@@ -60,12 +60,12 @@ def make_detector(prefer_gpu: bool = False):
         return front_end(prefer_gpu=True)
 
     sys.path.insert(0, str(ROOT / "sim"))
-    import ibvs_sim as sim
+    from sim_detector import detect_cube
 
     def detect(frame):
         if frame is None:
             return None
-        det = sim.detect_cube(frame)
+        det = detect_cube(frame)
         if det is None:
             return None
         x, y, w, h = det["bbox"]

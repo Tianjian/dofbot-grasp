@@ -1,6 +1,6 @@
 """Servo-bus abstractions for the DOFBOT SE arm.
 
-The sim/real contract (``dofbot_grasp/sim/INTERFACE.md``) requires:
+The sim/real contract (``docs/controller-architecture.md``) requires:
 
     ServoBus.write_joints(joints_rad, duration_s)
     ServoBus.read_joints() -> joints_rad

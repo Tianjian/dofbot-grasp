@@ -1,7 +1,7 @@
 """Grasp pipeline state machine for the DOFBOT SE arm.
 
 Named steps match the roboharness ``TaskProtocol`` phases for task
-``"dofbot_grasp"`` (see ``dofbot_grasp/sim/INTERFACE.md``)::
+``"dofbot_grasp"`` (see ``docs/controller-architecture.md``)::
 
     home -> search -> align -> approach -> grasp -> lift -> verify
 

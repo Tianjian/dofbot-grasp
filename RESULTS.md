@@ -1,7 +1,7 @@
 # Results
 
 Everything below is measured, not estimated. Real-robot rows come from the arm itself;
-simulation rows from `sim/dofbot_se.xml` driven by `sim/ibvs_sim.py`.
+simulation rows from `sim/dofbot_se.xml` driven by `sim/grasp_trial.py`.
 
 ## Real robot
 
@@ -140,6 +140,5 @@ regression turns the build red.
 ```bash
 python -m pytest -q                              # 71 tests
 MUJOCO_GL=egl python sim/grasp_trial.py --min-rate 0.75   # the CI gate, four positions
-MUJOCO_GL=egl python sim/record_controller.py             # 2793-frame recording -> sim/controller_sim.mp4
-MUJOCO_GL=egl python sim/ibvs_sim.py                     # the earlier image-servoing study
+MUJOCO_GL=egl python sim/record_controller.py             # recording -> sim/controller_sim.mp4
 ```
