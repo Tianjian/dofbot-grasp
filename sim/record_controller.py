@@ -57,10 +57,12 @@ def main() -> int:
     args = ap.parse_args()
 
     writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W * 2, H))
+    state = {"n": 0, "phase": "", "seed": ""}
+    # each seed gets its own model: sharing one let state leak between runs, so the video
+    # showed a different trajectory from the one the trial measures
     model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=240, width=320)
-    state = {"n": 0, "phase": "", "seed": ""}
 
     cube_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
 
@@ -103,11 +105,16 @@ def main() -> int:
             grab()
 
     mujoco.mj_step = step_and_capture
-    io = SimRobot(model, data)
+    io = SimRobot(model, data)  # rebound per seed below
     try:
         for tag in [t for t in args.seeds.split(",") if t.strip()]:
             idx = int(tag)
             seed = trial.SEEDS[idx]
+            model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
+            data = mujoco.MjData(model)
+            renderer = mujoco.Renderer(model, height=240, width=320)
+            io = SimRobot(model, data)   # must track the fresh model, or the controller
+                                          # commands an object nothing renders
             state["seed"] = f"seed{idx} {seed}"
             cube = model.jnt_qposadr[
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")

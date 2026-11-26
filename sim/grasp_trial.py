@@ -93,16 +93,43 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float
         ] = math.radians(TASK_POSE[i] - 90.0 if i < 5 else TASK_POSE[i] - 135.0)
     mujoco.mj_forward(model, data)
 
-    before = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
+    cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+    before = float(data.xpos[cube_body][2])
+    seen = {}
+
+    def on_stage(tag):
+        # remember where the cube is when the jaws close: from that moment it travels with
+        # the gripper, so its final position says nothing about pushing
+        if tag == "CLOSE":
+            seen["close"] = data.xpos[cube_body].copy()
+
     result = grasp(
         io,
         make_detector(prefer_gpu=use_gpu),
         jaw_offset_deg=jaw_offset,
+        on_stage=on_stage,
         log=print if verbose else None,
     )
     after = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
     lift = (after - before) * 1000
-    result.update({"seed": seed, "lift_mm": lift, "ok": bool(result.get("ok") and lift > 20)})
+    # A grasp only counts if the cube actually left the table *near where it started*.
+    # Lifting was accepted on height alone, which let a run count as a success after the
+    # fingers had shoved the cube 58 mm across the table and through it.
+    at_close = seen.get("close")
+    drift = (
+        float(np.linalg.norm((at_close[:2] - np.asarray(seed))[:2])) * 1000
+        if at_close is not None
+        else 0.0
+    )
+    dragged = float(drift)
+    result.update(
+        {
+            "seed": seed,
+            "lift_mm": lift,
+            "drift_mm": dragged,
+            "ok": bool(result.get("ok") and lift > 20 and dragged < 25.0),
+        }
+    )
     return result
 
 
