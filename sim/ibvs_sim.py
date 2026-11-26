@@ -17,9 +17,8 @@ Phases
 
 from __future__ import annotations
 
-import numpy as np
-
 import mujoco
+import numpy as np
 
 CUBE_HALF = 0.015  # 30 mm cube
 TABLE_Z = 0.0
@@ -83,7 +82,6 @@ def identify_jacobian(model, data, renderer, q, probe_deg=4.0):
     base = detect_cube(render(model, data, renderer))
     if base is None:
         return None
-    p0 = np.array(base["centre"])
     for idx in joints:
         deltas = []
         for sgn in (+1.0, -1.0):
@@ -114,12 +112,12 @@ def descend_step(model, data, q, dz=-0.004, damping=None):
     for k in range(3):
         qt = q.copy()
         qt[k] += eps
-        for j, v in zip((0, 1, 2, 3, 4), qt):
+        for j, v in zip((0, 1, 2, 3, 4), qt, strict=True):
             data.qpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")] = v
         mujoco.mj_forward(model, data)
         tip1, _ = _tip_and_axis(model, data)
         J[:, k] = (tip1 - tip0) / np.degrees(eps)
-    for j, v in zip((0, 1, 2, 3, 4), q):
+    for j, v in zip((0, 1, 2, 3, 4), q, strict=True):
         data.qpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")] = v
     mujoco.mj_forward(model, data)
     target = np.array([0.0, 0.0, dz])  # tool tip moves straight down
@@ -137,8 +135,6 @@ def tool_axis_pixel(model, data) -> tuple[float, float]:
     through the cube's plane (z = CUBE_Z) and aim the cube at *that* pixel.
     """
     cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "wrist_cam")
-    cam_pos = data.cam_xpos[cid].copy()
-    cam_mat = data.cam_xmat[cid].reshape(3, 3)
     l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
     axis = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 0.0, 1.0])
     axis /= np.linalg.norm(axis)
@@ -170,8 +166,6 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
 
-    names = [f"act_{n}" for n in ("joint1", "joint2", "joint3", "joint4", "joint5", "gripper")]
-    act = {n: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in names}
     jadr = {
         j: model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, j)]
         for j in ("joint1", "joint2", "joint3", "joint4", "joint5")
@@ -181,7 +175,7 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     data.qpos[cube_adr : cube_adr + 2] = seed_cube_xy
     data.qpos[cube_adr + 2] = CUBE_Z
     q = np.array([0.0, 0.55, 0.9, 1.0, 1.0])
-    for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q):
+    for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     ctrl = np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R])
     data.ctrl[:] = ctrl
@@ -225,7 +219,7 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
         return {"ok": False, "reason": "centre did not converge", "trace": trace}
 
     # ---- phase 2: descend along the tool axis, keeping the view direction --
-    for step in range(120):
+    for _step in range(120):
         tip, _ = _tip_and_axis(model, data)
         if tip[2] <= TIP_STOP_Z:
             break
