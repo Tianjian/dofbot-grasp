@@ -29,6 +29,35 @@ optical axis, the best fit is **roll 180 deg**, which lands the cube at `(30, 29
 from where the real camera shows it. So the mount position, the optical axis (the tool
 axis) and the roll are all consistent with the hardware.
 
+## The observer camera is now placed from measurement
+
+The FOV of the observer was already calibrated (15 views, 0.65 px RMS) but its *position*
+was a guess. Measured off the bench:
+
+| quantity | value |
+|---|---|
+| horizontal offset | **410 mm** in x, **350 mm** in -y, from the base axis projected on the desk |
+| height | **25 mm above the desk** |
+| aim | tilted **up 13 deg** |
+| field | 41.1 deg vertical, from fx 639.9 |
+
+Rendered at that pose beside the real frame (`/tmp/obs_final.png` during the session), the
+arm's pose, orientation and proportions line up. What does not line up is size: the arm
+appears about 20 % larger in the real frame, which is what a stand under the base would do
+by lifting the arm toward the camera.
+
+## The arm stands on a pedestal the model does not have
+
+Zooming the observer frame shows the arm bolted to a four-legged stand whose top sits at
+roughly pixel row 340, with the desk at row 395. Scaling by the base cylinder (about 50 mm
+across, 65 px in the image) puts the stand at **40-60 mm**.
+
+That is not cosmetic: the simulation's base plane *is* the table plane, so every grasp
+height is measured from a plane that is 40-60 mm too high. On the real arm, reaching a
+cube on the desk means going below the base plane, not 10 mm above it.
+
+The exact height has to be measured with a rule; the image only bounds it.
+
 ## Still open
 
 The simulation's camera quaternion is only approximate. Enumerating the 24 axis-aligned
