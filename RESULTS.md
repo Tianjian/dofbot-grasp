@@ -47,6 +47,19 @@ desk mat (S~104), so a saturation threshold only finds the lit front face. Its c
 is therefore biased towards that face, and a back-projected pixel turns the bias into
 aim error.
 
+The fix for that is not a better mask but the prior itself: the object is a 30 mm cube on a
+table, so only three of its six degrees of freedom are unknown -- where it sits and its yaw.
+`dofbot_grasp.cube_fit` fits those by overlapping the projected cube with the observed mask,
+which recovers the centre of the cube rather than the centre of whatever fragment was seen.
+Measured against the simulated ground truth:
+
+| cube centre | centroid back-projection | model fit |
+|---|---|---|
+| (77, 213) mm | 6.7 mm | **1.5 mm** |
+| (40, 213) mm | 5.8 mm | 5.7 mm |
+| (60, 180) mm | 5.5 mm | **3.4 mm** |
+| mean | 6.0 mm | **3.5 mm** |
+
 SAM2 is point-prompted from the colour blob and returns the whole silhouette. Measured on
 four simulated wrist frames against the projection of the cube's true centre:
 

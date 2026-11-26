@@ -69,7 +69,12 @@ def make_detector(prefer_gpu: bool = False):
         if det is None:
             return None
         x, y, w, h = det["bbox"]
-        return {"centre": tuple(det["centre"]), "area": float(w * h)}
+        out = {"centre": tuple(det["centre"]), "area": float(w * h)}
+        r = frame[:, :, 0].astype(np.int16)
+        g = frame[:, :, 1].astype(np.int16)
+        b = frame[:, :, 2].astype(np.int16)
+        out["mask"] = ((r > 90) & (r > g + 25) & (g > b) & (b < 140)).astype(np.uint8)
+        return out
 
     return detect
 

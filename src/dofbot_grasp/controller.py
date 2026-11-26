@@ -22,6 +22,7 @@ from collections.abc import Callable
 import numpy as np
 
 from . import kinematics as K
+from .cube_fit import fit_cube
 from .params import GRASP, JOINTS, MOUNT
 
 
@@ -413,6 +414,28 @@ def grasp(
     est = io.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
     if est is None:
         return {"ok": False, "reason": "back-projection failed"}
+    # The centroid is the centre of whatever fragment was measured, not of the cube: the
+    # pale top face drops out of a saturation mask and the jaws cut the sides. With the
+    # known 30 mm cube as a prior, only the table position and yaw are unknown, and fitting
+    # those to the mask puts the centre where it belongs.
+    mask = det.get("mask")
+    if mask is not None:
+        pose_now = io.read_joints()
+
+        def _project(pts, _p=pose_now):
+            return io.project(pts, _p)
+
+        fitted = fit_cube(
+            mask,
+            _project,
+            edge=GRASP.cube_edge_m,
+            seed_xy=(float(est[0]), float(est[1])),
+        )
+        if fitted is not None and fitted["iou"] > 0.45:
+            est = np.array([fitted["centre_m"][0], fitted["centre_m"][1], GRASP.table_z_m])
+            say(
+                f"cube fitted: iou {fitted['iou']:.2f}, yaw {np.degrees(fitted['yaw_rad']):.0f} deg"
+            )
     say(f"cube at {np.round(est * 1000, 0)} mm")
 
     # Descend straight down from where the centring left the tool axis. Moving laterally to
