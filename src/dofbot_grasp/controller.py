@@ -129,10 +129,14 @@ def move_tip(io, delta_m: np.ndarray, *, gain: float = 1.6, max_deg: float = 2.0
     lam = 1e-2 * float(np.trace(Jf @ Jf.T)) / 3.0
     dqf = Jf.T @ np.linalg.solve(Jf @ Jf.T + lam * np.eye(3), delta)
     target = dict(pose)
-    for k in np.nonzero(free)[0]:
+    column = 0
+    for k in range(5):
+        if not free[k]:
+            continue
         target[k + 1] = pose[k + 1] + float(
-            np.clip(dqf[np.sum(free[:k])] * gain, -max_deg, max_deg)
+            np.clip(dqf[column] * gain, -max_deg, max_deg)
         )
+        column += 1
     io.command(target)
 
 

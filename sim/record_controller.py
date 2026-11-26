@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "sim"))
 
 import grasp_trial as trial  # noqa: E402
+
 from dofbot_grasp.controller import grasp  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 

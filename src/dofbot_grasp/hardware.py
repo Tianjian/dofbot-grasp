@@ -219,9 +219,9 @@ class SerialRobot:
         return ctrl.camera_pose(self.read_joints())
 
     def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
-        import cv2
-
         import importlib
+
+        import cv2
 
         ctrl = importlib.import_module("dofbot_grasp.controller")
         C, R = ctrl.camera_pose(self.read_joints() if pose is None else pose)
