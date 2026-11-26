@@ -68,6 +68,26 @@ def visible_pose_candidates(seed: tuple[float, float], limit: int = 12) -> list[
                 v = cy - f * pc[1] / depth
                 if not (30.0 < u < 610.0 and 30.0 < v < 450.0):
                     continue
+                # being able to see the cube is not enough: the grasp pose must also be
+                # reachable from here, and poses that see the cube well tend to sit in
+                # configurations from which the vertical grasp is 30 mm out of reach
+                from dofbot_grasp import kinematics as K
+                from dofbot_grasp.params import JOINTS
+
+                goal = np.eye(4)
+                goal[:3, :3] = np.diag([1.0, -1.0, -1.0])
+                gz = 0.010
+                goal[:3, 3] = np.array(
+                    [seed[0], seed[1], gz]
+                ) - JOINTS.fingertip_below_tcp_m * np.array([0.0, 0.0, -1.0])
+                q_goal = K.inverse(goal, seed=joint_angles_of(pose))
+                Tf = K.forward(q_goal)
+                tip_goal = Tf[:3, 3] + JOINTS.fingertip_below_tcp_m * (
+                    Tf[:3, :3] @ np.array([0.0, 0.0, 1.0])
+                )
+                reach = float(np.linalg.norm(tip_goal - np.array([seed[0], seed[1], gz])))
+                if reach > 0.012:
+                    continue
                 d = float(np.hypot(u - 0.4 * 640.0, v - 0.6 * 480.0))
                 scored.append((d, pose))
     scored.sort(key=lambda kv: kv[0])
@@ -172,7 +192,7 @@ def make_detector(prefer_gpu: bool = False):
 def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float = 0.0) -> dict:
     import mujoco
 
-    from dofbot_grasp.controller import grasp_prior
+    from dofbot_grasp.controller import grasp_measured
     from dofbot_grasp.hardware import SimRobot
 
     model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
@@ -225,7 +245,7 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float
         if tag == "CLOSE":
             seen["close"] = data.xpos[cube_body].copy()
 
-    result = grasp_prior(
+    result = grasp_measured(
         io,
         detector,
         on_stage=on_stage,

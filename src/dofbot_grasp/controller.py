@@ -437,6 +437,128 @@ def _fit_once(io, detect, pose=None):
     return fitted
 
 
+def aim_camera_at_cube(
+    io, detect, *, max_iters: int = 12, tol_px: float = 12.0, log: Callable | None = None
+) -> bool:
+    """Turn the arm until the cube sits at the centre of the camera image.
+
+    The camera is 56 mm off the tool axis, so "point the tool axis at the cube" projects
+    outside the frame and cannot be used as a target. What the camera can do is put the cube
+    in the middle of its own view, which is what this does -- and once the cube is centred,
+    the measurement of where it is on the table is as good as it gets.
+    """
+    say = log or (lambda _m: None)
+    for it in range(max_iters):
+        det = detect(io.capture_wrist())
+        if det is None:
+            return False
+        e = np.array([det["centre"][0] - IMG_CENTRE[0], det["centre"][1] - IMG_CENTRE[1]])
+        say(f"  aim it{it}: cube {np.round(det['centre'], 0)}, error {np.round(e, 1)} px")
+        if float(np.linalg.norm(e)) < tol_px:
+            return True
+        pose = io.read_joints()
+        # move the cube's own ray towards the centre: the Jacobian of the cube's pixel
+        cube = _fit_once(io, detect)
+        if cube is None:
+            return False
+        point = np.array([cube["centre_m"][0], cube["centre_m"][1], GRASP.table_z_m])
+        J = _image_jacobian(io, pose, point)
+        if J is None:
+            return False
+        dq = np.clip(-0.6 * np.linalg.pinv(J) @ e, -3.0, 3.0)
+        target = dict(pose)
+        for k in range(min(4, len(dq))):
+            target[k + 1] = pose[k + 1] + float(dq[k])
+        io.command(target)
+    det = detect(io.capture_wrist())
+    return (
+        det is not None
+        and float(np.hypot(det["centre"][0] - IMG_CENTRE[0], det["centre"][1] - IMG_CENTRE[1]))
+        < 3 * tol_px
+    )
+
+
+IMG_CENTRE = (320.0, 240.0)
+
+
+def _ik_to_tip(io, target_xyz, *, tol: float = 0.012) -> bool:
+    """Solve and command the pose that puts the fingertip at ``target_xyz``.
+
+    IK rather than numerical stepping: the step solver reports success while leaving the tip
+    tens of millimetres short, which is how the jaws ended up closing on air.
+    """
+    pose = io.read_joints()
+    goal = np.eye(4)
+    goal[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    goal[:3, 3] = np.asarray(target_xyz, float) - JOINTS.fingertip_below_tcp_m * np.array(
+        [0.0, 0.0, -1.0]
+    )
+    q = K.inverse(goal, seed=[float(v) for v in joint_angles(pose)])
+    io.command({i + 1: float(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1]) for i in range(5)})
+    tip, _ = tip_and_axis(io.read_joints())
+    return bool(float(np.linalg.norm(np.asarray(target_xyz, float) - tip)) < 3 * tol)
+
+
+def grasp_measured(
+    io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
+) -> dict:
+    """Centre on the cube, measure it, then grasp open loop with IK.
+
+    The camera can only see the cube over a narrow cone, so closing the servo loop through
+    the whole approach is impossible: moving far enough to reach loses sight of it. Instead
+    the sequence spends its vision budget at one place -- a pose where the cube is centred in
+    the image, which is also where the 3-D estimate is most reliable -- and then drives the
+    arm by IK alone, with nothing to lose track of.
+    """
+    say = log or (lambda _m: None)
+    stage = on_stage or (lambda _s: None)
+
+    stage("AIM")
+    # Centring is best effort. It sharpens the measurement, but the fit does not require the
+    # cube to be in the middle of the frame -- only to be seen well -- and centring it can
+    # need tens of degrees of joint motion, which is exactly what loses sight of it.
+    # No centring motion. The pre-position is already chosen to see the cube, and moving to
+    # centre it drives the arm into configurations from which the grasp pose is 30 mm out of
+    # reach -- so the vision budget is spent on the measurement instead.
+    say("measuring from the pre-position")
+
+    stage("MEASURE")
+    fitted = _fit_once(io, detect)
+    if fitted is None:
+        return {"ok": False, "reason": "measurement failed"}
+    if fitted["iou"] < 0.6:
+        return {"ok": False, "reason": f"measurement too weak (iou {fitted['iou']:.2f})"}
+    x, y = float(fitted["centre_m"][0]), float(fitted["centre_m"][1])
+    yaw = float(fitted["yaw_rad"])
+    say(
+        f"measured cube at ({x * 1000:.0f}, {y * 1000:.0f}) mm, iou {fitted['iou']:.2f}, "
+        f"yaw {np.degrees(yaw):.0f} deg"
+    )
+
+    stage("ALIGN")
+    j5 = align_jaws_to_yaw(io, yaw)
+    say(f"jaws squared at j5 = {j5:+.0f} deg")
+
+    stage("APPROACH")
+    clearance = GRASP.table_z_m + GRASP.cube_edge_m + 0.035
+    if not _ik_to_tip(io, np.array([x, y, clearance])):
+        return {"ok": False, "reason": "IK could not reach the pre-grasp point"}
+    say("above the cube")
+
+    stage("DESCEND")
+    if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m])):
+        return {"ok": False, "reason": "IK could not reach the grasp height"}
+    say("at grasp height")
+
+    stage("CLOSE")
+    io.command(None, gripper=1.0)
+    stage("LIFT")
+    lift = dict(io.read_joints())
+    lift[3] = lift[3] + 20.0
+    io.command(lift, gripper=1.0)
+    return {"ok": True, "cube": [x, y], "yaw": yaw}
+
+
 def grasp_prior(
     io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
 ) -> dict:

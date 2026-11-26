@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "sim"))
 
 import grasp_trial as trial  # noqa: E402
 
-from dofbot_grasp.controller import grasp_prior, tip_and_axis  # noqa: E402
+from dofbot_grasp.controller import grasp_measured, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 from real_camera import RealCamera  # noqa: E402
 
@@ -160,7 +160,7 @@ def main() -> int:
                     cid = mujoco.mj_name2id(_model, mujoco.mjtObj.mjOBJ_BODY, "cube")
                     _seen["close"] = _data.xpos[cid].copy()
 
-            res = grasp_prior(
+            res = grasp_measured(
                 io,
                 trial.make_detector(),
                 on_stage=on_stage,
