@@ -50,11 +50,21 @@ def main():
     data.qpos[-7:-4] = [SEED[0], SEED[1], S.CUBE_Z]
     S.servos(model, data, np.array([*q, S.GRIP_OPEN]), max_steps=1500)
 
+    tgt_px = [None]          # target pixel, updated by the caller each stage
+
     def shoot(tag):
-        a = label(make_scene(model, data, renderer, "wrist_cam"), f"wrist: {tag}")
-        b = label(make_scene(model, data, renderer, "overview"), f"overview: {tag}")
-        frame = np.hstack([a, b])
-        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        raw = make_scene(model, data, renderer, "wrist_cam")
+        det = S.detect_cube(raw)
+        vis = cv2.cvtColor(raw, cv2.COLOR_RGB2BGR)
+        if tgt_px[0] is not None:
+            cv2.drawMarker(vis, (int(tgt_px[0][0]), int(tgt_px[0][1])), (0, 255, 0),
+                           cv2.MARKER_CROSS, 18, 2)
+        if det is not None:
+            cv2.circle(vis, (int(det["centre"][0]), int(det["centre"][1])), 7, (0, 0, 255), 2)
+        a = label(vis, f"wrist: {tag}  green=target red=cube")
+        b = label(cv2.cvtColor(make_scene(model, data, renderer, "overview"),
+                               cv2.COLOR_RGB2BGR), f"overview: {tag}")
+        writer.write(np.hstack([a, b]))
 
     shoot("start")
     det0 = S.detect_cube(make_scene(model, data, renderer, "wrist_cam"))
@@ -62,6 +72,7 @@ def main():
         print("cube not visible at start")
         return
     tgt_u, tgt_v = S.tool_axis_pixel(model, data)
+    tgt_px[0] = (tgt_u, tgt_v)
     J = S.identify_jacobian(model, data, renderer, q, probe_deg=4.0)
 
     for it in range(30):

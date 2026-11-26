@@ -68,7 +68,11 @@ rather than the old geometry's zero margin.
 
 ## Status
 
-A recorded run is in `sim/ibvs_sim.mp4` (left: wrist view, right: overview). Reviewing
+A recorded run is in `sim/ibvs_sim.mp4`, with a keyframe strip in
+`sim/ibvs_keyframes.png`. The wrist half overlays the target pixel (green cross) and
+the detected cube centroid (red circle), which is what makes the aim error legible:
+during the descent the two markers separate even though the reported centring error was
+a pixel or two, because the cross is a *fixed pixel* while the arm keeps moving. (left: wrist view, right: overview). Reviewing
 it frame by frame is what exposed the four control faults listed above -- the numbers
 alone looked plausible while the arm was climbing away from the cube.
 
