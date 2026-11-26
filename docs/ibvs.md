@@ -73,6 +73,16 @@ arm the camera hangs off the forearm while the jaws sit on the rotating gripper 
   in simulation;
 * the view was a straight-down look with the fingers in the middle of it.
 
+The mount is now registered to the caliper measurements rather than eyeballed: 23 mm
+back from the flange and 50 mm lateral puts the camera at link4 x = -50.85 mm, and the
+roll is **flipped 180 deg** about the optical axis. Without the flip the world vertical
+maps to the image vertical in the wrong sense -- "the horizon is upside down" -- and
+that is not cosmetic: it inverts the vertical error, so every IBVS correction pushed the
+arm the wrong way. With the registered orientation the hover stage stops climbing
+(89 -> 132 mm before) and settles at z = 44 mm while closing on the cube.
+`sim/ibvs_camera_registration.png` puts the registered render beside a real wrist frame
+for comparison.
+
 Its height along the tool axis matters too. Rendering a sweep at link4 x = -74, -55,
 -35 and -15 mm showed the gripper body swelling into frame as the camera climbed toward
 the arm, while -74 mm (right at the link5 origin) put the fingers across the lower
