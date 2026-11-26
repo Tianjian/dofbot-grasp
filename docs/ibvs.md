@@ -73,6 +73,13 @@ arm the camera hangs off the forearm while the jaws sit on the rotating gripper 
   in simulation;
 * the view was a straight-down look with the fingers in the middle of it.
 
+Its height along the tool axis matters too. Rendering a sweep at link4 x = -74, -55,
+-35 and -15 mm showed the gripper body swelling into frame as the camera climbed toward
+the arm, while -74 mm (right at the link5 origin) put the fingers across the lower
+border. **-55 mm**, i.e. 19 mm above the link5 origin, gives the composition the real
+camera returns: desk dominant, gripper at the top of frame, fingers only at the bottom
+edge. Centring then converges to **-0.1 px**.
+
 Moved to link4, looking along the tool axis (which is link4's **-x**), the view becomes
 the side-above view the real camera returns, with the fingers only at the bottom edge.
 Centring then converges sub-pixel (160.7 px against a 160.0 px target) because the
