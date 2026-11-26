@@ -105,28 +105,52 @@ def _tip_jacobian(pose: dict[int, float], eps_deg: float = 1.0) -> np.ndarray:
 
 
 def move_tip(io, delta_m: np.ndarray, *, gain: float = 1.6, max_deg: float = 2.0) -> None:
-    """Command a tip translation with a damped least-squares step (only the tip's height
-    is guaranteed; lateral drift is the centring stage's job)."""
+    """Command a tip translation with a damped least-squares step.
+
+    Joints sitting on a limit that the step would push further out are dropped from the
+    solve. Without that active set the solver kept pushing a saturated elbow and the tip
+    stalled 25 mm above the grasp height instead of reaching it.
+    """
     pose = io.read_joints()
     J = _tip_jacobian(pose)
-    lam = 1e-2 * float(np.trace(J @ J.T)) / 3.0
-    dq = J.T @ np.linalg.solve(J @ J.T + lam * np.eye(3), np.asarray(delta_m, float))
-    target = dict(pose)
+    delta = np.asarray(delta_m, float)
+    free = np.ones(5, dtype=bool)
     for k in range(5):
-        target[k + 1] = pose[k + 1] + float(np.clip(dq[k] * gain, -max_deg, max_deg))
+        lo = -JOINTS.offsets_deg[k + 1]
+        hi = JOINTS.servo_range_deg[k + 1] - JOINTS.offsets_deg[k + 1]
+        qk = pose[k + 1] - JOINTS.offsets_deg[k + 1]
+        if qk <= lo + 0.5:
+            free[k] = J[2, k] * delta[2] <= 0.0
+        elif qk >= hi - 0.5:
+            free[k] = J[2, k] * delta[2] >= 0.0
+    if not free.any():
+        return
+    Jf = J[:, free]
+    lam = 1e-2 * float(np.trace(Jf @ Jf.T)) / 3.0
+    dqf = Jf.T @ np.linalg.solve(Jf @ Jf.T + lam * np.eye(3), delta)
+    target = dict(pose)
+    for k in np.nonzero(free)[0]:
+        target[k + 1] = pose[k + 1] + float(
+            np.clip(dqf[np.sum(free[:k])] * gain, -max_deg, max_deg)
+        )
     io.command(target)
 
 
-def move_tip_to(io, target_xyz, *, max_iters: int = 60, tol: float = 0.006) -> bool:
-    """Closed-loop tip translation; re-reads the pose each step because the servos sag."""
+def move_tip_to(io, target_xyz, *, max_iters: int = 140, tol: float = 0.005) -> bool:
+    """Walk the fingertip onto ``target_xyz`` with small damped steps.
+
+    A single IK solve looked tempting but stalls when the elbow sits on its limit; small
+    closed-loop steps keep working because each one is re-measured from the read-back.
+    """
+    target = np.asarray(target_xyz, float)
     for _ in range(max_iters):
         tip, _ = tip_and_axis(io.read_joints())
-        err = np.asarray(target_xyz, float) - tip
+        err = target - tip
         if np.linalg.norm(err) < tol:
             return True
-        move_tip(io, err * 0.5)
+        move_tip(io, np.clip(err, -0.010, 0.010))
     tip, _ = tip_and_axis(io.read_joints())
-    return bool(np.linalg.norm(np.asarray(target_xyz, float) - tip) < 3 * tol)
+    return bool(np.linalg.norm(target - tip) < 0.015)
 
 
 # ---------------------------------------------------------------- servoing
@@ -135,17 +159,17 @@ def centre(
 ) -> bool:
     """Drive the cube's centroid onto ``target_px`` with a per-step image Jacobian."""
     pose = io.read_joints()
-    J = _image_jacobian(io, detect, pose)
-    if J is None:
+    det = detect(io.capture_wrist())
+    if det is None:
+        return False
+    point = io.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
+    if point is None:
         return False
     for it in range(max_iters):
-        # Re-identifying costs six probe moves and each restore is imperfect, so refresh
-        # on an interval rather than every step: every step accumulated enough drift to
-        # make the loop oscillate instead of settle.
-        if it and it % GRASP.reidentify_every == 0:
-            Jn = _image_jacobian(io, detect, io.read_joints())
-            if Jn is not None:
-                J = Jn
+        pose = io.read_joints()
+        J = _image_jacobian(io, pose, point)
+        if J is None:
+            return False
         det = detect(io.capture_wrist())
         if det is None:
             return False
@@ -165,21 +189,24 @@ def centre(
     return False
 
 
-def _image_jacobian(io, detect: Callable, pose: dict[int, float]) -> np.ndarray | None:
-    """2 x 3 pixel-per-degree Jacobian by central differences."""
+def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarray | None:
+    """2 x 3 pixel-per-degree Jacobian of a *known* world point.
+
+    Computed from the camera model at perturbed poses, so it costs no motion. Probing the
+    real arm instead cost six moves per refresh and each restore was imperfect, which
+    accumulated drift and made the loop oscillate rather than settle.
+    """
+    base = io.project(point_m, pose)
+    if base is None:
+        return None
     cols = []
     for k in range(3):
-        samples = []
-        for sign in (+1.0, -1.0):
-            probe = dict(pose)
-            probe[k + 1] += sign * GRASP.probe_deg
-            io.command(probe)
-            det = detect(io.capture_wrist())
-            samples.append(None if det is None else np.array(det["centre"]))
-        io.command(pose)
-        if samples[0] is None or samples[1] is None:
+        probe = dict(pose)
+        probe[k + 1] += GRASP.probe_deg
+        moved = io.project(point_m, probe)
+        if moved is None:
             return None
-        cols.append((samples[0] - samples[1]) / (2.0 * GRASP.probe_deg))
+        cols.append((np.array(moved) - np.array(base)) / GRASP.probe_deg)
     return np.column_stack(cols)
 
 
@@ -230,7 +257,12 @@ def grasp(io, detect: Callable, *, log: Callable | None = None) -> dict:
         return {"ok": False, "reason": "back-projection failed"}
     say(f"cube at {np.round(est * 1000, 0)} mm")
 
-    target = np.array([est[0], est[1], GRASP.fingertip_grasp_z_m])
+    # Descend along the tool axis that the centring just aligned, not towards the
+    # back-projected estimate: that estimate carries the silhouette-centroid bias (a few
+    # millimetres), and descending to it pushed the cube 10 mm across the table instead of
+    # straddling it.
+    tip_now, _ = tip_and_axis(io.read_joints())
+    target = np.array([tip_now[0], tip_now[1], GRASP.fingertip_grasp_z_m])
     if not move_tip_to(io, target, max_iters=80):
         return {"ok": False, "reason": "descent did not converge"}
     say("at grasp height")

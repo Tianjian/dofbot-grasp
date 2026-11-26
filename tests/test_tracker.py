@@ -14,7 +14,7 @@ def test_gpu_probe_never_raises():
 
 def test_colour_detector_returns_the_controller_interface():
     det = ColourDetector()
-    assert det(np.zeros((240, 320, 3), np.uint8)) is None     # nothing to see
+    assert det(np.zeros((240, 320, 3), np.uint8)) is None  # nothing to see
     det.reset()
 
 

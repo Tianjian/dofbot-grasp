@@ -30,8 +30,12 @@ class RobotIO(Protocol):
     def capture_observer(self) -> np.ndarray | None:
         """One RGB frame from the fixed observer camera, for safety checks."""
 
-    def project(self, point_m: np.ndarray) -> tuple[float, float] | None:
-        """Base-frame point -> pixel in the wrist frame (None if behind the camera)."""
+    def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
+        """Base-frame point -> pixel in the wrist frame (None if behind the camera).
+
+        ``pose`` asks for a kinematic query at another joint configuration -- used to build
+        the image Jacobian without moving the arm.
+        """
 
     def unproject_to_table(self, u: float, v: float, z_plane: float) -> np.ndarray | None:
         """Wrist pixel -> base-frame point on the horizontal plane ``z_plane``."""
@@ -127,7 +131,19 @@ class SimRobot:
         fovy = float(np.radians(self.model.cam_fovy[cid]))
         return (self.img_h / 2.0) / np.tan(fovy / 2.0)
 
-    def project(self, point_m: np.ndarray) -> tuple[float, float] | None:
+    def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
+        if pose is not None:
+            saved = self.data.qpos.copy()
+            for i in range(1, 6):
+                self.data.qpos[self._addr(f"joint{i}")] = np.radians(
+                    pose[i] - JOINTS.offsets_deg[i]
+                )
+            self._mj.mj_forward(self.model, self.data)
+            try:
+                return self.project(point_m)
+            finally:
+                self.data.qpos[:] = saved
+                self._mj.mj_forward(self.model, self.data)
         C, R = self._cam()
         local = R.T @ (np.asarray(point_m, float) - C)
         depth = -local[2]  # MuJoCo cameras look along -z
@@ -202,10 +218,13 @@ class SerialRobot:
         ctrl = importlib.import_module("dofbot_grasp.controller")
         return ctrl.camera_pose(self.read_joints())
 
-    def project(self, point_m: np.ndarray) -> tuple[float, float] | None:
+    def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
         import cv2
 
-        C, R = self._camera()
+        import importlib
+
+        ctrl = importlib.import_module("dofbot_grasp.controller")
+        C, R = ctrl.camera_pose(self.read_joints() if pose is None else pose)
         local = R.T @ (np.asarray(point_m, float) - C)
         if local[2] <= 1e-6:
             return None
