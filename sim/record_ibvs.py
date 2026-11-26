@@ -15,12 +15,12 @@ import numpy as np
 
 sys.path.insert(0, "/home/toby/Desktop/dofbot-grasp/sim")
 
-import ibvs_sim as S  # noqa: E402
+import ibvs_sim as S
 
 OUT = "/home/toby/Desktop/dofbot-grasp/sim/ibvs_sim.mp4"
 SEED = (0.020, 0.140)
 W, H = 480, 360
-EVERY = 200         # sim steps per captured frame (dt = 2 ms -> 0.4 s)
+EVERY = 200  # sim steps per captured frame (dt = 2 ms -> 0.4 s)
 FPS = 10.0
 
 

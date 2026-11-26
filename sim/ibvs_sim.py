@@ -27,12 +27,12 @@ MOUNT_BACK = 0.023  # camera behind the tool axis (caliper measurement)
 MOUNT_LAT = 0.050  # camera lateral offset (caliper measurement)
 
 IMG_W, IMG_H = 320, 240
-DEADBAND_PX = 3.0   # 6 px was ~6.7 mm laterally, more than the 5.45 mm jaw clearance
+DEADBAND_PX = 3.0  # 6 px was ~6.7 mm laterally, more than the 5.45 mm jaw clearance
 MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
 TIP_STOP_Z = 0.010  # fingertip below the cube's mid-height (15 mm) before closing
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
-GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm (parallel slides)
+GRIP_OPEN = 0.0  # j6 = 0 -> jaws apart, inner faces at +-20.45 mm (parallel slides)
 GRIP_CLOSE = 0.0159  # 15.9 mm slide each -> inner faces +-13.7 mm, 1.3 mm interference
 
 # ---- sim2real joint convention ------------------------------------------------
@@ -104,13 +104,15 @@ def align_jaw_axis(model, data, q):
     jaw opening axis should be parallel to a horizontal axis. j5 turns the gripper base
     about the tool axis; because the camera hangs off link4 it is not affected.
     """
-    j5 = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "joint5")]
     best = None
     for d in np.linspace(-np.pi, np.pi, 181):
         q[4] = d
         for k, v in zip(range(5), q[:5], strict=True):
-            data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
-                model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]] = v
+            data.qpos[
+                model.jnt_qposadr[
+                    mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")
+                ]
+            ] = v
         mujoco.mj_forward(model, data)
         l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
         jaw = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 1.0, 0.0])
@@ -125,8 +127,9 @@ def align_jaw_axis(model, data, q):
             best = (score, float(d))
     q[4] = best[1]
     for k, v in zip(range(5), q[:5], strict=True):
-        data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]] = v
+        data.qpos[
+            model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]
+        ] = v
     mujoco.mj_forward(model, data)
     return best[1]
 
@@ -189,13 +192,17 @@ def move_tip(model, data, q, delta, gain=1.6, max_deg=2.0, n_joints=4):
         qt = q.copy()
         qt[k] += eps
         for j, v in zip(range(5), qt, strict=True):
-            data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
-                model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")]] = v
+            data.qpos[
+                model.jnt_qposadr[
+                    mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")
+                ]
+            ] = v
         mujoco.mj_forward(model, data)
         J[:, k] = (_tip_and_axis(model, data)[0] - tip0) / np.degrees(eps)
     for j, v in zip(range(5), q, strict=True):
-        data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")]] = v
+        data.qpos[
+            model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{j + 1}")]
+        ] = v
     mujoco.mj_forward(model, data)
     lam = 1e-2 * float(np.trace(J @ J.T)) / 3.0
     dq = J.T @ np.linalg.solve(J @ J.T + lam * np.eye(3), np.asarray(delta, float))
@@ -265,7 +272,7 @@ def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=110):
         descend_step(model, data, q, dz=dz * gain)
         servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
         after = _tip_and_axis(model, data)[0][2]
-        if after >= before - 1e-4:          # did not go down: push harder
+        if after >= before - 1e-4:  # did not go down: push harder
             gain = min(gain * 1.8, 10.0)
         else:
             gain = max(gain * 0.9, 1.0)
@@ -326,7 +333,6 @@ def tool_axis_pixel(model, data) -> tuple[float, float]:
     point the fingers will hit is not the image centre.  We project the tool axis
     through the cube's plane (z = CUBE_Z) and aim the cube at *that* pixel.
     """
-    cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "wrist_cam")
     l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
     axis = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 0.0, 1.0])
     axis /= np.linalg.norm(axis)
@@ -338,7 +344,7 @@ def tool_axis_pixel(model, data) -> tuple[float, float]:
     return project_point(model, data, target)
 
 
-MOVE_TIME_S = 1.2   # the real write6 frames command a 1.2 s move
+MOVE_TIME_S = 1.2  # the real write6 frames command a 1.2 s move
 
 
 def servos(model, data, ctrl, tol=0.004, max_steps=3000, move_time=MOVE_TIME_S):
@@ -357,12 +363,11 @@ def servos(model, data, ctrl, tol=0.004, max_steps=3000, move_time=MOVE_TIME_S):
         a = min(1.0, (k + 1) / ramp)
         data.ctrl[:] = start + (ctrl - start) * a
         mujoco.mj_step(model, data)
-        if a >= 1.0 and k > ramp:
-            if np.abs(data.qpos[:5] - ctrl[:5]).max() < tol:
-                for _ in range(100):
-                    data.ctrl[:] = ctrl
-                    mujoco.mj_step(model, data)
-                return
+        if a >= 1.0 and k > ramp and np.abs(data.qpos[:5] - ctrl[:5]).max() < tol:
+            for _ in range(100):
+                data.ctrl[:] = ctrl
+                mujoco.mj_step(model, data)
+            return
     return
 
 
@@ -393,21 +398,19 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False, shot=None):
     if det0 is None:
         return {"ok": False, "reason": "cube not visible at start", "iters": 0}
     tgt_u, tgt_v = tool_axis_pixel(model, data)  # captured once, never updated
-    trace = []
     if shot:
         shot("READY")
-    ok_centre, det_centred = centre_cube(model, data, renderer, q, tgt_u, tgt_v,
-                                         verbose=verbose)
+    ok_centre, det_centred = centre_cube(model, data, renderer, q, tgt_u, tgt_v, verbose=verbose)
     if shot:
         shot("CENTRED")
     if not ok_centre:
         return {"ok": False, "reason": "lost the cube while centring"}
 
     # ---- phase 1b: turn the gripper base so the jaws close on two faces ----
-    j5 = align_jaw_axis(model, data, q)
+    j5_deg = np.degrees(align_jaw_axis(model, data, q))
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
     if verbose:
-        print(f"  jaw axis aligned: j5 = {np.degrees(j5):.1f} deg")
+        print(f"  jaw axis aligned: j5 = {j5_deg:.1f} deg")
 
     # ---- phase 1c: compensate the camera's parallax -------------------------
     # Centring puts the cube on the *camera's* optical axis, but the camera sits off the
@@ -425,9 +428,9 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False, shot=None):
     if cube_est is None:
         return {"ok": False, "reason": "back-projection failed"}
     if verbose:
-        print(f"  back-projected cube: ({cube_est[0]*1000:.0f}, {cube_est[1]*1000:.0f}) mm")
+        print(f"  back-projected cube: ({cube_est[0] * 1000:.0f}, {cube_est[1] * 1000:.0f}) mm")
     if shot:
-        shot(f"BACKPROJECT_{cube_est[0]*1000:.0f}_{cube_est[1]*1000:.0f}")
+        shot(f"BACKPROJECT_{cube_est[0] * 1000:.0f}_{cube_est[1] * 1000:.0f}")
 
     # ---- phase 2: descend straight down, holding x/y ------------------------
     # Descending along the tool axis is not vertical: the arm reaches out as it lowers

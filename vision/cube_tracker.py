@@ -59,11 +59,14 @@ class CubeTracker:
         cx, cy = m["m10"] / m["m00"], m["m01"] / m["m00"]
         x, y, w, h = cv2.boundingRect(hull)
         self.last = (cx, cy)
+        clipped = bool(
+            x <= 2 or y <= 2 or x + w >= frame.shape[1] - 2 or y + h >= frame.shape[0] - 2
+        )
         return {
             "centre": (cx, cy),
             "area": float(cv2.contourArea(hull)),
             "bbox": (x, y, w, h),
-            "clipped": bool(x <= 2 or y <= 2 or x + w >= frame.shape[1] - 2 or y + h >= frame.shape[0] - 2),
+            "clipped": clipped,
             "mask": seg,
         }
 
