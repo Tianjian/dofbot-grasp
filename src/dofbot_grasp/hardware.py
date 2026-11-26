@@ -82,7 +82,7 @@ class SimRobot:
         observer_camera="overview",
         img_w=320,
         img_h=240,
-        real_cameras: dict[str, "RealCameraLike"] | None = None,
+        real_cameras: dict[str, RealCameraLike] | None = None,
     ) -> None:
         import mujoco
 
