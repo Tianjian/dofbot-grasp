@@ -31,11 +31,32 @@ So the controller consumes only the tracker's centroid and area
 | descent stop | fingertip z <= 12 mm (FK) | area saturates at ~7 % because the camera looks along the tool axis and the cube sinks below the view as the hand closes |
 | descent is FK-only | yes | the cube legitimately leaves the frame; vision only aligns, as planned for the real arm |
 
+## Gripper geometry, taken from the mesh
+
+`link5.STL` contains three plates of **21.3 x 3.0 x 47.9 mm** centred at
+**(+-31.1, ~0, 64.1) mm**, i.e. the two jaws. The simulation's original gripper was
+wrong on three counts and has been rebuilt from these numbers:
+
+| quantity | old sim | from the mesh |
+|---|---|---|
+| opening axis | y | **x** |
+| jaw offset | +-18.5 mm | **+-31.1 mm** |
+| jaw size | 18 x 7 x 40 mm | **21.3 x 3 x 47.9 mm** |
+| fingertip reach | z = 70 mm | **z = 87.5 mm** |
+
+With a 6.8 mm slide per jaw the inner faces go from +-20.45 mm (open) to +-13.65 mm
+(closed), which clamps a 30 mm cube with 1.35 mm of interference -- a real squeeze
+rather than the old geometry's zero margin.
+
 ## Status
 
-In simulation, the CENTRE phase converges from all four seeded cube positions
-(errors driven inside the deadband in 2-4 iterations). The descent reaches the
-fingertip target, but the close/lift step does not yet hold the cube - the finger
-geometry in `sim/dofbot_se.xml` (finger slides 7-10 mm, 30 mm cube) leaves little
-clamping margin, and the residual centring offset of up to 18 px is a couple of
-centimetres at that range. That is the next thing to tune.
+CENTRE converges from all four seeded positions, and with a 6 px deadband the cube
+lands within a pixel or two of the tool axis.
+
+The DESCEND phase is **not yet stable**: tracing it shows the tool tip ending up at
+z = 275 mm, far from the cube at (-30, -250) mm. Two causes, both in the controller
+rather than the hardware: the image Jacobian is identified once and reused while the
+arm travels far from where it was measured, and the coupled centring fights the
+descent (each adjusts q2/q3 in opposite directions). Re-identifying J every descent
+iteration, and letting the descent own q2/q3 while centring only trims the wrist, is
+the next step.

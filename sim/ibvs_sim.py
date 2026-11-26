@@ -27,12 +27,13 @@ MOUNT_BACK = 0.023  # camera behind the tool axis (caliper measurement)
 MOUNT_LAT = 0.050  # camera lateral offset (caliper measurement)
 
 IMG_W, IMG_H = 320, 240
-DEADBAND_PX = 18.0
+DEADBAND_PX = 6.0
 MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
 TIP_STOP_Z = 0.012  # close when the fingertip is at the cube's lower half
+FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
 OPEN_L, OPEN_R = 0.008, -0.008  # the two finger slides, +ve opens each
-CLOSE_L, CLOSE_R = -0.003, 0.003
+CLOSE_L, CLOSE_R = 0.0068, 0.0068   # +6.8 mm each -> inner faces +-13.65 mm
 
 
 def render(model, data, renderer, cam="wrist_cam"):
@@ -101,7 +102,7 @@ def _tip_and_axis(model, data):
     l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
     axis = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 0.0, 1.0])
     axis /= np.linalg.norm(axis)
-    return data.xpos[l5].copy() + 0.070 * axis, axis
+    return data.xpos[l5].copy() + FINGERTIP_Z * axis, axis
 
 
 def descend_step(model, data, q, dz=-0.004, damping=None):

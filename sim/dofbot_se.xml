@@ -85,15 +85,18 @@
                 <site name="tcp" pos="0 0 0.050" size="0.002" rgba="0 0 0 0"/>
                 <camera name="wrist_cam" pos="0.035 0 0.010" quat="0 1 0 0" fovy="75"/>
 
-                <!-- two fingers: prismatic along link5 Y, 0 = touching the cube -->
-                <body name="finger_left" pos="0 0.0185 0.050">
-                  <joint name="gripper_left" type="slide" axis="0 1 0" range="-0.003 0.010"/>
-                  <geom name="finger_left_geom" type="box" size="0.009 0.0035 0.020"
+                <!-- two fingers, dimensions taken from link5.STL: the mesh contains
+                     three plates of 21.3 x 3.0 x 47.9 mm at x = +-31.1 mm, z = 64.1 mm.
+                     They slide along X (the mesh's opening axis), inner faces at
+                     +-20.45 mm open, +-14 mm closed, which clamps a 30 mm cube. -->
+                <body name="finger_left" pos="-0.0311 0 0.0641">
+                  <joint name="gripper_left" type="slide" axis="1 0 0" range="0 0.0068"/>
+                  <geom name="finger_left_geom" type="box" size="0.01065 0.0015 0.02395"
                         friction="1.4 0.02 0.002" rgba="0.30 0.32 0.36 1"/>
                 </body>
-                <body name="finger_right" pos="0 -0.0185 0.050">
-                  <joint name="gripper_right" type="slide" axis="0 1 0" range="-0.010 0.003"/>
-                  <geom name="finger_right_geom" type="box" size="0.009 0.0035 0.020"
+                <body name="finger_right" pos="0.0311 0 0.0641">
+                  <joint name="gripper_right" type="slide" axis="-1 0 0" range="0 0.0068"/>
+                  <geom name="finger_right_geom" type="box" size="0.01065 0.0015 0.02395"
                         friction="1.4 0.02 0.002" rgba="0.30 0.32 0.36 1"/>
                 </body>
               </body>
@@ -117,7 +120,7 @@
     <position name="act_joint3" joint="joint3" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
     <position name="act_joint4" joint="joint4" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
     <position name="act_joint5" joint="joint5" kp="20" forcerange="-3 3" ctrlrange="-1.5708 3.1416"/>
-    <position name="act_gripper" joint="gripper_left" kp="200" forcerange="-12 12" ctrlrange="-0.003 0.010"/>
-    <position name="act_gripper_r" joint="gripper_right" kp="200" forcerange="-12 12" ctrlrange="-0.010 0.003"/>
+    <position name="act_gripper" joint="gripper_left" kp="300" forcerange="-20 20" ctrlrange="0 0.0068"/>
+    <position name="act_gripper_r" joint="gripper_right" kp="300" forcerange="-20 20" ctrlrange="0 0.0068"/>
   </actuator>
 </mujoco>
