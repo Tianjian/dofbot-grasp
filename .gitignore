@@ -21,3 +21,6 @@ frames/
 
 # OS
 .DS_Store
+
+# Model weights (fetch with `make weights` or on first run; see models/README.md)
+models/*.pt
