@@ -44,7 +44,8 @@ def main():
         j: model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, j)]
         for j in ("joint1", "joint2", "joint3", "joint4", "joint5")
     }
-    q = np.array([-0.1745, 0.1396, -1.5359, -1.3265, 1.0])
+    # start from the parked zero pose so the opening frames are readable
+    q = np.array([0.0, 0.0, 0.0, 0.0, 1.0])
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     data.qpos[-7:-4] = [SEED[0], SEED[1], S.CUBE_Z]
@@ -66,7 +67,10 @@ def main():
                                cv2.COLOR_RGB2BGR), f"overview: {tag}")
         writer.write(np.hstack([a, b]))
 
-    shoot("start")
+    shoot("PARK (zero pose)")
+    q = np.array([-0.1745, 0.1396, -1.5359, -1.3265, 1.0])
+    S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
+    shoot("READY (task pose)")
     det0 = S.detect_cube(make_scene(model, data, renderer, "wrist_cam"))
     if det0 is None:
         print("cube not visible at start")

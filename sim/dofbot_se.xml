@@ -31,6 +31,10 @@
   </asset>
 
   <worldbody>
+    <!-- black backdrop behind the arm, as in the real cell: it gives the arm a legible
+         silhouette and makes the simulated observer frame comparable with the photos -->
+    <geom name="backdrop" type="box" size="0.90 0.01 0.55" pos="0.0 0.62 0.55"
+          rgba="0.03 0.03 0.035 1" contype="0" conaffinity="0"/>
     <camera name="overview" pos="0.2800 -0.6600 0.2400" xyaxes="0.924017 0.382352 -0.000000 -0.054267 0.131146 0.989877" fovy="41"/>
     <light pos="0.2 -0.4 0.9" dir="-0.2 0.4 -0.9" directional="true" diffuse="0.40 0.40 0.40"/>
     <light pos="-0.3 0.2 0.7" dir="0.3 -0.2 -0.7" directional="true" diffuse="0.22 0.22 0.22"/>
