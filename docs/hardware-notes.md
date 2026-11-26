@@ -393,6 +393,38 @@ pixels -- because that needs the **mount orientation**, which remains the one
 genuinely unknown quantity. The range-only formulation sidesteps it; anything that
 uses image coordinates does not.
 
+## Why apparent-size localisation stalls
+
+Area measures range well -- the numbers agree with geometry to a few percent once
+``k`` is near 1.0. The failure is downstream of that:
+
+**Horizontal position is ill-conditioned under a top-down view.** With the camera
+looking almost straight down, the horizontal offset from the camera axis is
+``sqrt(r^2 - h^2)``. At ``h = 97 mm``:
+
+| range r | implied horizontal offset |
+|---|---|
+| 100.5 mm | 24 mm |
+| 110.0 mm | 51 mm |
+
+A 10 % range error more than doubles the horizontal estimate, which is why successive
+fits landed anywhere between 57 and 103 mm radius. The method needs an **oblique**
+view (30-50 deg elevation) to be well conditioned.
+
+The roll about the optical axis does not have to be fitted: yawing j1 by 5 deg moved
+the cube 110 px in +x and only 6 px in +y, so the image x axis is the azimuthal
+direction with a roll of **about 3 deg**. That is a direct measurement.
+
+**And an oblique view is not reachable.** Searching every (q2,q3,q4) combination for
+a pose that puts the camera at 28-52 deg elevation from the cube *and* keeps the
+optical axis (link4 -x) within 10 deg of it returns **zero** poses: the wrist camera
+is rigidly aligned with the arm, so its elevation is locked to the arm's geometry.
+
+So the size method cannot be made well conditioned on this hardware without first
+knowing the mount transform, and the mount transform cannot be recovered from
+observations that are themselves ill conditioned. That is the loop to break, and the
+way to break it is a target mounted on the robot (hand-eye AX=XB), not more fitting.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
