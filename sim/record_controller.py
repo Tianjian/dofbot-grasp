@@ -22,8 +22,9 @@ sys.path.insert(0, str(ROOT / "sim"))
 
 import grasp_trial as trial  # noqa: E402
 
-from dofbot_grasp.controller import grasp, tip_and_axis  # noqa: E402
+from dofbot_grasp.controller import grasp_prior, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
+from real_camera import RealCamera  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
 FPS = 30.0  # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)
@@ -113,19 +114,27 @@ def main() -> int:
             model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
             data = mujoco.MjData(model)
             renderer = mujoco.Renderer(model, height=240, width=320)
-            io = SimRobot(model, data)  # must track the fresh model, or the controller
-            # commands an object nothing renders
+            # render through the measured intrinsics: the real wrist lens has its principal
+            # point 50 px off centre and k1 -0.50, which a MuJoCo pinhole does not model
+            io = SimRobot(
+                model,
+                data,
+                img_w=640,
+                img_h=480,
+                real_cameras={"wrist_cam": RealCamera(ROOT / "calib" / "intrinsics_wrist.json")},
+            )
             state["seed"] = f"seed{idx} {seed}"
             cube = model.jnt_qposadr[
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")
             ]
             data.qpos[cube : cube + 3] = [seed[0], seed[1], 0.015]
+            pose = trial.find_visible_pose(seed)  # same start the trial uses
             for i in range(1, 6):
                 data.qpos[
                     model.jnt_qposadr[
                         mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")
                     ]
-                ] = np.radians(trial.TASK_POSE[i] - (90.0 if i < 5 else 135.0))
+                ] = np.radians(pose[i] - (90.0 if i < 5 else 135.0))
             mujoco.mj_forward(model, data)
             state["phase"] = "start"
             grab()
@@ -137,10 +146,9 @@ def main() -> int:
                     cid = mujoco.mj_name2id(_model, mujoco.mjtObj.mjOBJ_BODY, "cube")
                     _seen["close"] = _data.xpos[cid].copy()
 
-            res = grasp(
+            res = grasp_prior(
                 io,
                 trial.make_detector(),
-                jaw_offset_deg=args.jaw_offset,
                 on_stage=on_stage,
             )
             cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")

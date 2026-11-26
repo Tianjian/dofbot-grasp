@@ -135,9 +135,20 @@ class SimRobot:
             a = (k + 1) / ramp
             self.data.ctrl[:] = start + (goal - start) * a
             self._mj.mj_step(self.model, self.data)
-        for _ in range(int(BUS.settle_timeout_s / dt * 0.25)):
+        # settle until the joints stop moving, not for a fixed count: a folded pose under
+        # gravity needed longer than the old 2.5 s and stopped 6 deg short of its command,
+        # which put the fingertip tens of millimetres off target
+        max_steps = int(BUS.settle_timeout_s / dt)
+        prev = self.data.qpos.copy()
+        still = 0
+        for _ in range(max_steps):
             self.data.ctrl[:] = goal
             self._mj.mj_step(self.model, self.data)
+            change = float(np.abs(self.data.qpos[:5] - prev[:5]).max())
+            prev = self.data.qpos.copy()
+            still = still + 1 if change < 1e-5 else 0
+            if still >= 50:
+                break
         return self.read_joints()
 
     # -- vision ---------------------------------------------------------
@@ -182,6 +193,12 @@ class SimRobot:
         return (self.img_h / 2.0) / np.tan(fovy / 2.0)
 
     def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
+        arr = np.asarray(point_m, float)
+        if arr.ndim == 2:  # batch: (N, 3) -> (N, 2)
+            out = [self.project(p, pose) for p in arr]
+            if any(o is None for o in out):
+                return None
+            return np.array(out, float)
         if pose is not None:
             saved = self.data.qpos.copy()
             for i in range(1, 6):

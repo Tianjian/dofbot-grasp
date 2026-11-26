@@ -39,7 +39,9 @@ def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
     """A joint pose from which the wrist camera can see ``seed``, at a safe height."""
     from dofbot_grasp.controller import camera_pose, tip_and_axis
 
-    intr = sim_intrinsics()
+    # the measured wrist intrinsics, matching what the renderer produces -- using the old
+    # 320x240 / 90 deg numbers here found poses the real camera cannot actually see
+    intr = real_wrist_intrinsics()
     f, cx, cy = intr["fy"], intr["cx"], intr["cy"]
     best: tuple[float, dict[int, float]] | None = None
     for j1 in range(50, 131, 10):
@@ -63,10 +65,17 @@ def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
                 v = cy + f * pc[1] / pc[2]
                 if not (20.0 < u < 620.0 and 20.0 < v < 460.0):
                     continue
-                d = float(np.hypot(u - 0.25 * intr["width"], v - 0.25 * intr["height"]))
+                d = float(np.hypot(u - 0.35 * 640.0, v - 0.55 * 480.0))
                 if best is None or d < best[0]:
                     best = (d, pose)
     return best[1] if best is not None else dict(TASK_POSE)
+
+
+def real_wrist_intrinsics() -> dict:
+    """The measured wrist camera, which the recorded frames are rendered through."""
+    import json
+
+    return json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
 
 
 def sim_intrinsics(width: int = 320, height: int = 240, fovy_deg: float = 90.0) -> dict:
@@ -121,20 +130,32 @@ def make_detector(prefer_gpu: bool = False):
 def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float = 0.0) -> dict:
     import mujoco
 
-    from dofbot_grasp.controller import grasp
+    from dofbot_grasp.controller import grasp_prior
     from dofbot_grasp.hardware import SimRobot
 
     model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
     data = mujoco.MjData(model)
-    io = SimRobot(model, data)
+    sys.path.insert(0, str(ROOT / "sim"))
+    from real_camera import RealCamera
+
+    io = SimRobot(
+        model,
+        data,
+        img_w=640,
+        img_h=480,
+        real_cameras={"wrist_cam": RealCamera(ROOT / "calib" / "intrinsics_wrist.json")},
+    )
 
     jadr = data.qpos
     cube = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")]
     jadr[cube : cube + 3] = [seed[0], seed[1], 0.015]
+    # start where the camera can actually see the cube: a fixed task pose cannot work with
+    # a 26.6 deg field and a camera 56 mm off the tool axis
+    start_pose = find_visible_pose(seed)
     for i in range(1, 6):
         jadr[
             model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")]
-        ] = math.radians(TASK_POSE[i] - 90.0 if i < 5 else TASK_POSE[i] - 135.0)
+        ] = math.radians(start_pose[i] - (90.0 if i < 5 else 135.0))
     mujoco.mj_forward(model, data)
 
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
@@ -147,10 +168,9 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float
         if tag == "CLOSE":
             seen["close"] = data.xpos[cube_body].copy()
 
-    result = grasp(
+    result = grasp_prior(
         io,
         make_detector(prefer_gpu=use_gpu),
-        jaw_offset_deg=jaw_offset,
         on_stage=on_stage,
         log=print if verbose else None,
     )

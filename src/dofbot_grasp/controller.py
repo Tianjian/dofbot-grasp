@@ -382,6 +382,89 @@ def descend_guarded(io, detect: Callable, target_xyz, say) -> bool:
 
 
 # ---------------------------------------------------------------- sequence
+def align_jaws_to_yaw(io, yaw_rad: float) -> float:
+    """Turn j5 so the jaws close parallel to one pair of the cube's faces.
+
+    Better than aligning to a world axis: the cube can sit at any yaw, and the fit measures
+    it. Jaws meeting two faces is the difference between a grasp and a corner pinch.
+    """
+    pose = io.read_joints()
+    best = None
+    for deg in np.linspace(-135.0, 135.0, 181):
+        probe = dict(pose)
+        probe[5] = JOINTS.offsets_deg[5] + deg
+        jaw = jaw_axis(probe)
+        horiz = np.array([jaw[0], jaw[1], 0.0])
+        n = np.linalg.norm(horiz)
+        if n < 1e-6:
+            continue
+        horiz /= n
+        face = np.array([np.cos(yaw_rad), np.sin(yaw_rad)])
+        score = abs(float(horiz[:2] @ face))
+        if best is None or score > best[0]:
+            best = (score, float(deg))
+    if best is None:
+        return 0.0
+    target = dict(pose)
+    target[5] = JOINTS.offsets_deg[5] + best[1]
+    io.command(target)
+    return best[1]
+
+
+def grasp_prior(
+    io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
+) -> dict:
+    """Grasp from the fitted cube pose, without pixel servoing.
+
+    The camera sits 56 mm off the tool axis, and at the poses where the cube is visible the
+    tool axis meets the table *outside* the frame -- so the old "drive the cube onto the
+    tool-axis pixel" target does not exist. Once the cube's 3-D pose is fitted there is no
+    need for it: go to the fitted centre with the jaws squared to the fitted yaw.
+    """
+    say = log or (lambda _m: None)
+    stage = on_stage or (lambda _s: None)
+    stage("FIT")
+    det = detect(io.capture_wrist())
+    if det is None:
+        return {"ok": False, "reason": "cube not visible"}
+    pose0 = io.read_joints()
+    est = io.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
+    if est is None:
+        return {"ok": False, "reason": "back-projection failed"}
+    mask = det.get("mask")
+    if mask is None:
+        return {"ok": False, "reason": "no mask from the detector"}
+
+    def _project(pts, _p=pose0):
+        return io.project(pts, _p)
+
+    fitted = fit_cube(
+        mask, _project, edge=GRASP.cube_edge_m, seed_xy=(float(est[0]), float(est[1]))
+    )
+    if fitted is None or fitted["iou"] <= 0.45:
+        return {"ok": False, "reason": "cube fit too weak"}
+    est = np.array([fitted["centre_m"][0], fitted["centre_m"][1], GRASP.table_z_m])
+    yaw = fitted["yaw_rad"]
+    say(f"cube fitted: iou {fitted['iou']:.2f}, yaw {np.degrees(yaw):.0f} deg")
+
+    stage("ALIGN")
+    j5 = align_jaws_to_yaw(io, yaw)
+    say(f"jaws squared at j5 = {j5:+.0f} deg")
+
+    stage("APPROACH")
+    if not move_tip_to(io, np.array([est[0], est[1], GRASP.fingertip_grasp_z_m]), max_iters=120):
+        return {"ok": False, "reason": "approach did not converge"}
+    say("at grasp height")
+
+    stage("CLOSE")
+    io.command(None, gripper=1.0)
+    stage("LIFT")
+    lift = dict(io.read_joints())
+    lift[3] = lift[3] + 20.0  # elbow: raising the wrist instead just twists the grip
+    io.command(lift, gripper=1.0)
+    return {"ok": True, "cube": est.tolist(), "yaw": yaw}
+
+
 def grasp(
     io,
     detect: Callable,
