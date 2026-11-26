@@ -35,6 +35,43 @@ FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5
 GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm
 GRIP_CLOSE = 0.14  # 8 deg swing -> inner faces +-13.7 mm, 1.3 mm interference on a 30 mm cube
 
+# ---- sim2real joint convention ------------------------------------------------
+# Real bus servos report u in [0, 180] (j1..j4, j6) and [0, 270] (j5). The vendor
+# library reverses servos 2/3/4 internally, and after that the joint angle is
+#     q1..q4 = u - 90 deg        (so u = 90 is the vertical / neutral pose)
+#     q5     = u - 135 deg       (270 deg of travel)
+# The simulation stores q directly, so this is the conversion in both directions.
+SERVO_OFFSET_DEG = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0, 5: 135.0}
+# Gripper: servo 6 goes 0..180; on the real arm the jaws are apart at u6 around 20 and
+# shut at around 140. The jaw hinge therefore spans ~120 deg of servo for 9.2 deg of
+# hinge, i.e. about a 13:1 reduction.
+GRIP_SERVO_OPEN = 20.0
+GRIP_SERVO_CLOSED = 140.0
+GRIP_JAW_AT_OPEN = 0.0
+GRIP_JAW_AT_CLOSED = 0.14
+
+
+def servo_to_joint(servo_deg: dict[int, float]) -> np.ndarray:
+    """Servo read-back (ids 1..5) -> simulation joint angles in radians."""
+    return np.array([np.radians(servo_deg[i] - SERVO_OFFSET_DEG[i]) for i in range(1, 6)])
+
+
+def joint_to_servo(q) -> dict[int, float]:
+    """Simulation joint angles (radians) -> servo commands (degrees)."""
+    return {i: float(np.degrees(q[i - 1]) + SERVO_OFFSET_DEG[i]) for i in range(1, 6)}
+
+
+def jaw_from_servo6(u6: float) -> float:
+    """Servo 6 angle (deg) -> jaw hinge angle (rad), matching the real open/closed stops."""
+    span = (u6 - GRIP_SERVO_OPEN) / (GRIP_SERVO_CLOSED - GRIP_SERVO_OPEN)
+    return GRIP_JAW_AT_OPEN + span * (GRIP_JAW_AT_CLOSED - GRIP_JAW_AT_OPEN)
+
+
+def servo6_from_jaw(jaw: float) -> float:
+    """Jaw hinge angle (rad) -> servo 6 command (deg)."""
+    span = (jaw - GRIP_JAW_AT_OPEN) / (GRIP_JAW_AT_CLOSED - GRIP_JAW_AT_OPEN)
+    return GRIP_SERVO_OPEN + span * (GRIP_SERVO_CLOSED - GRIP_SERVO_OPEN)
+
 
 def render(model, data, renderer, cam="wrist_cam"):
     renderer.update_scene(data, camera=cam)
@@ -244,18 +281,31 @@ def tool_axis_pixel(model, data) -> tuple[float, float]:
     return project_point(model, data, target)
 
 
-def servos(model, data, ctrl, tol=0.004, max_steps=900):
-    """Drive the position actuators to ``ctrl`` and step until the joints settle."""
+MOVE_TIME_S = 1.2   # the real write6 frames command a 1.2 s move
+
+
+def servos(model, data, ctrl, tol=0.004, max_steps=3000, move_time=MOVE_TIME_S):
+    """Drive the actuators to ``ctrl`` with the real servos' *timed* move semantics.
+
+    The real bus takes a move time with every write6 frame and interpolates to the
+    target over it, with a ~1.5 deg static error under gravity. Setting data.ctrl
+    directly makes the simulated arm settle about eight times faster, which is enough
+    to change the controller's behaviour, so the target is ramped instead.
+    """
     ctrl = np.asarray(ctrl, float)
-    for _ in range(max_steps):
-        data.ctrl[:] = ctrl
+    start = data.ctrl.copy()
+    dt = float(model.opt.timestep)
+    ramp = max(1, int(move_time / dt))
+    for k in range(max_steps):
+        a = min(1.0, (k + 1) / ramp)
+        data.ctrl[:] = start + (ctrl - start) * a
         mujoco.mj_step(model, data)
-        err = np.abs(data.qpos[:5] - ctrl[:5]).max()
-        if err < tol:
-            for _ in range(30):
-                data.ctrl[:] = ctrl
-                mujoco.mj_step(model, data)
-            return
+        if a >= 1.0 and k > ramp:
+            if np.abs(data.qpos[:5] - ctrl[:5]).max() < tol:
+                for _ in range(100):
+                    data.ctrl[:] = ctrl
+                    mujoco.mj_step(model, data)
+                return
     return
 
 

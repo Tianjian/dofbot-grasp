@@ -13,7 +13,7 @@
   </visual>
 
   <default>
-    <joint damping="0.02" armature="0.002" frictionloss="0.01"/>
+    <joint damping="0.15" armature="0.01" frictionloss="0.01"/>
     <geom friction="1.0 0.02 0.002" condim="4" solref="0.004 1" solimp="0.9 0.95 0.001"/>
     <position kp="40" kv="1.5"/>
   </default>
@@ -48,28 +48,28 @@
 
       <!-- joint1: origin (0,0,0.06605) rpy(-0.010805,0,0) -->
       <body name="link1" pos="0 0 0.06605" quat="0.99998542 -0.00540243 0 0">
-        <joint name="joint1" type="hinge" axis="0 0 1" range="-1.5708 1.5708"/>
+        <joint name="joint1" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="0.15" armature="0.01"/>
         <geom name="link1_geom" type="cylinder" size="0.028 0.016" pos="0 0 0.016"
               rgba="0.78 0.78 0.80 0"/>
           <geom name="link1_visual" type="mesh" mesh="link1_mesh" group="2" contype="0" conaffinity="0" rgba="0.74 0.74 0.77 1"/>
 
         <!-- joint2: origin (0,-0.00031873,0.04145) rpy(0,1.5708,0) -->
         <body name="link2" pos="0 -0.00031873 0.04145" quat="0.70710678 0 0.70710678 0">
-          <joint name="joint2" type="hinge" axis="0 0 1" range="-1.5708 1.5708"/>
+          <joint name="joint2" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="0.15" armature="0.01"/>
           <geom name="link2_geom" type="box" size="0.0414 0.014 0.014" pos="-0.0414 0 0"
                 rgba="0.72 0.72 0.74 0"/>
           <geom name="link2_visual" type="mesh" mesh="link2_mesh" group="2" contype="0" conaffinity="0" rgba="0.74 0.74 0.77 1"/>
 
           <!-- joint3: origin (-0.08285,0,0) rpy(0,0,0) -->
           <body name="link3" pos="-0.08285 0 0">
-            <joint name="joint3" type="hinge" axis="0 0 1" range="-1.5708 1.5708"/>
+            <joint name="joint3" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="0.15" armature="0.01"/>
             <geom name="link3_geom" type="box" size="0.0414 0.012 0.012" pos="-0.0414 0 0"
                   rgba="0.72 0.72 0.74 0"/>
           <geom name="link3_visual" type="mesh" mesh="link3_mesh" group="2" contype="0" conaffinity="0" rgba="0.74 0.74 0.77 1"/>
 
             <!-- joint4: origin (-0.08285,0,0) rpy(0,0,0.0083081) -->
             <body name="link4" pos="-0.08285 0 0" quat="0.99999138 0 0 0.00415400">
-              <joint name="joint4" type="hinge" axis="0 0 1" range="-1.5708 1.5708"/>
+              <joint name="joint4" type="hinge" axis="0 0 1" range="-1.5708 1.5708" damping="0.15" armature="0.01"/>
               <geom name="link4_geom" type="box" size="0.0369 0.011 0.011" pos="-0.0369 0 0"
                     rgba="0.72 0.72 0.74 0"/>
           <geom name="link4_visual" type="mesh" mesh="link4_mesh" group="2" contype="0" conaffinity="0" rgba="0.74 0.74 0.77 1"/>
@@ -80,7 +80,7 @@
               <camera name="wrist_cam" pos="-0.05840 -0.0576 -0.0007" quat="0 0.70710678 0 0.70710678" fovy="90"/>
 
               <body name="link5" pos="-0.07385 -0.001 0" quat="0.70710678 0 -0.70710678 0">
-                <joint name="joint5" type="hinge" axis="0 0 1" range="-1.5708 3.1416"/>
+                <joint name="joint5" type="hinge" axis="0 0 1" range="-2.3562 2.3562"/>
                 <geom name="link5_geom" type="box" size="0.010 0.020 0.012" pos="0 0 0.012"
                       rgba="0.45 0.47 0.52 1"/>
                 <geom name="gripper_base" type="box" size="0.010 0.021 0.010" pos="0 0 0.030"
@@ -122,11 +122,11 @@
   </worldbody>
 
   <actuator>
-    <position name="act_joint1" joint="joint1" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
-    <position name="act_joint2" joint="joint2" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
-    <position name="act_joint3" joint="joint3" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
-    <position name="act_joint4" joint="joint4" kp="30" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
-    <position name="act_joint5" joint="joint5" kp="20" forcerange="-3 3" ctrlrange="-1.5708 3.1416"/>
+    <position name="act_joint1" joint="joint1" kp="18" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
+    <position name="act_joint2" joint="joint2" kp="18" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
+    <position name="act_joint3" joint="joint3" kp="18" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
+    <position name="act_joint4" joint="joint4" kp="18" forcerange="-6 6" ctrlrange="-1.5708 1.5708"/>
+    <position name="act_joint5" joint="joint5" kp="20" forcerange="-3 3" ctrlrange="-2.3562 2.3562"/>
     <position name="act_gripper" joint="gripper_left" kp="120" forcerange="-6 6" ctrlrange="0 0.16"/>
   </actuator>
 
