@@ -131,11 +131,11 @@ def main() -> int:
             grab()
             seen = {}
 
-            def on_stage(tag, _model=model, _data=data):
+            def on_stage(tag, _model=model, _data=data, _seen=seen):
                 state["phase"] = tag
                 if tag == "CLOSE":
                     cid = mujoco.mj_name2id(_model, mujoco.mjtObj.mjOBJ_BODY, "cube")
-                    seen["close"] = _data.xpos[cid].copy()
+                    _seen["close"] = _data.xpos[cid].copy()
 
             res = grasp(
                 io,
