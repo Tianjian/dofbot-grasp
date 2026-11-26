@@ -11,31 +11,55 @@ and the servo bus are swapped.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-> **Demo** — [`sim/grasp_demo.mp4`](sim/grasp_demo.mp4) (59 s): third-person view +
-> live wrist-camera inset, with phase, simulated time, cube height and contact
-> count. First half: a successful grasp (108.7 mm lift, 8 contacts). Second half:
-> the same motion with the fingers held open (0 mm, 0 contacts) — the fault the
-> verification is supposed to catch.
+> **Demo** — [`sim/ibvs_sim.mp4`](sim/ibvs_sim.mp4) (410 frames, 0.4 s each): wrist
+> camera on the left, the observer camera on the right, phase name and simulated clock
+> overlaid. A successful run: IBVS centres the cube to under a pixel, the cube's pixel is
+> back-projected onto the table for a 3-D fix, the arm descends vertically and lifts it
+> **50 mm** clear.
+>
+> Earlier kinematic demo: [`sim/grasp_demo.mp4`](sim/grasp_demo.mp4) — same motion with
+> the fingers held open as a deliberate fault case.
+>
+> **All measured numbers, real and simulated, are in [`RESULTS.md`](RESULTS.md).**
 
 ---
 
 ## What it does
 
-1. **Perceive** — find a 30 mm cube in a 640×480 wrist-camera frame with no deep
-   learning (HSV/Otsu → contours → min-area rect), and estimate its range from its
-   apparent size with a pinhole model.
+1. **Perceive** — find a 30 mm cube in a 640×480 wrist-camera frame. A colour threshold
+   seeds SAM2, which returns the whole silhouette including the pale top face that a
+   saturation mask misses (15,898 px against the mask's 14,844 on the same frame). The
+   tracker costs 134-863 ms per frame on an RTX 2060.
 2. **Reach** — solve the 5-DOF arm's inverse kinematics with damped least squares
    against a URDF-derived chain, then map joint radians to servo degrees.
 3. **Grasp** — run a seven-phase state machine (`home → search → align → approach →
    grasp → lift → verify`) and emit joint targets to six servos over a
    `115200` baud serial link.
 
-The whole loop runs on a laptop CPU. No GPU, no cloud call, no ROS.
+Perception optionally uses a GPU through SAM2; the servoing and grasp logic are
+ordinary Python. No cloud call, no ROS.
 
 ## Verified in simulation
 
 | Check | Result |
+|
+## Status
+
+| layer | state |
 |---|---|
+| Real arm — bus, joint directions, zero pose, limits | verified, read-back stable to 0.16 deg |
+| Real arm — grasp | one successful grasp, cube lifted clear and held |
+| Cameras — intrinsics | wrist cx 269.8 (50 px off centre), observer RMS 0.65 px |
+| Cameras — mount | wrist registered to the camera modelled in `link5.STL`; observer matched to the real cell including the black backdrop |
+| Simulation ↔ arm | forward kinematics **0.0 mm** over seven poses; static error 1.53 deg vs ~1.5; settling 1.6 s vs 1.5-2.0 |
+| Simulation — grasp | **3 of 4 cube positions grasped**, lifting 50-55 mm |
+| Simulation → real | **not yet run** |
+
+Details: [`RESULTS.md`](RESULTS.md) for the numbers,
+[`docs/sim2real.md`](docs/sim2real.md) for the servo/joint correspondence,
+[`docs/ibvs.md`](docs/ibvs.md) for the servoing pipeline and the faults found building it.
+
+---|---|
 | Reference motion lifts the cube | **107.99 mm** with **8** finger contacts |
 | roboharness wedge, normal run | **PASS**, lifted **106.21 mm**, 4 contacts, `roboharness gate` → **exit 0** |
 | roboharness wedge, fingers never close | **FAIL** at `lift`, lifted **0.0 mm**, 0 contacts, gate → **exit 1** |
