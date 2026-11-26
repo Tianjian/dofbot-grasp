@@ -33,7 +33,7 @@ LAMBDA = 0.8
 TIP_STOP_Z = 0.010  # fingertip below the cube's mid-height (15 mm) before closing
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
 GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm (parallel slides)
-GRIP_CLOSE = 0.0068  # 6.8 mm slide each -> inner faces +-13.7 mm, 1.3 mm interference
+GRIP_CLOSE = 0.0159  # 15.9 mm slide each -> inner faces +-13.7 mm, 1.3 mm interference
 
 # ---- sim2real joint convention ------------------------------------------------
 # Real bus servos report u in [0, 180] (j1..j4, j6) and [0, 270] (j5). The vendor
@@ -48,7 +48,7 @@ SERVO_OFFSET_DEG = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0, 5: 135.0}
 GRIP_SERVO_OPEN = 20.0
 GRIP_SERVO_CLOSED = 140.0
 GRIP_JAW_AT_OPEN = 0.0
-GRIP_JAW_AT_CLOSED = 0.0068
+GRIP_JAW_AT_CLOSED = 0.0159
 
 
 def servo_to_joint(servo_deg: dict[int, float]) -> np.ndarray:
@@ -113,7 +113,7 @@ def align_jaw_axis(model, data, q):
                 model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]] = v
         mujoco.mj_forward(model, data)
         l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
-        jaw = data.xmat[l5].reshape(3, 3) @ np.array([1.0, 0.0, 0.0])
+        jaw = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 1.0, 0.0])
         horiz = np.array([jaw[0], jaw[1], 0.0])
         norm = np.linalg.norm(horiz)
         if norm < 1e-6:
