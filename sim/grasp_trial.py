@@ -30,6 +30,45 @@ SEEDS = [
 TASK_POSE = {1: 90.0 - 10.0, 2: 90.0 + 8.0, 3: 90.0 - 88.0, 4: 90.0 - 76.0, 5: 135.0}
 
 
+def joint_angles_of(servo: dict[int, float]) -> np.ndarray:
+    """Servo degrees -> joint radians, for seeding the IK."""
+    return np.radians(np.array([servo[i] - (90.0 if i < 5 else 135.0) for i in range(1, 6)]))
+
+
+def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
+    """A joint pose from which the wrist camera can see ``seed``, at a safe height."""
+    from dofbot_grasp.controller import camera_pose, tip_and_axis
+
+    intr = sim_intrinsics()
+    f, cx, cy = intr["fy"], intr["cx"], intr["cy"]
+    best: tuple[float, dict[int, float]] | None = None
+    for j1 in range(50, 131, 10):
+        for j2 in range(70, 126, 10):
+            for j3 in range(-10, 61, 10):
+                pose = {
+                    1: float(j1),
+                    2: float(j2),
+                    3: float(j3),
+                    4: float(j2 + j3 - 90.0),
+                    5: 135.0,
+                }
+                tip, _ = tip_and_axis(pose)
+                if not (0.05 < tip[2] < 0.20):
+                    continue
+                C, R = camera_pose(pose)
+                pc = (np.array([seed[0], seed[1], 0.015]) - C) @ R
+                if pc[2] <= 1e-6:
+                    continue
+                u = cx + f * pc[0] / pc[2]
+                v = cy + f * pc[1] / pc[2]
+                if not (20.0 < u < 620.0 and 20.0 < v < 460.0):
+                    continue
+                d = float(np.hypot(u - 0.25 * intr["width"], v - 0.25 * intr["height"]))
+                if best is None or d < best[0]:
+                    best = (d, pose)
+    return best[1] if best is not None else dict(TASK_POSE)
+
+
 def sim_intrinsics(width: int = 320, height: int = 240, fovy_deg: float = 90.0) -> dict:
     """The simulated wrist camera is a pinhole with a declared vertical field of view."""
     f = (height / 2.0) / math.tan(math.radians(fovy_deg) / 2.0)

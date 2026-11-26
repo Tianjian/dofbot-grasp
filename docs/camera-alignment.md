@@ -85,6 +85,22 @@ and resamples through the measured intrinsics, so the simulated frame has the sa
 as the real one, distortion included. Verified by construction: the render geometry solves
 to f = 1016.6 px for the wrist and 640.2 px for the observer, against 1016.6 and 640.2 real.
 
+## The camera sits 56 mm off the tool axis, and that sets the workspace
+
+A consequence worth stating because it burned several attempts: with the tool axis vertical
+and the tip 75 mm above a cube, the cube is **not in frame**. The camera is 56 mm to the side
+of the axis, so at 90 mm range the cube sits about 32 deg off a 13 deg half-field.
+
+The camera looks along the tool axis, so it sees whatever the axis points at from 56 mm to
+one side -- not what is directly under the tip. Any "move above the cube and look down"
+manoeuvre therefore fails, which is why `sim/grasp_trial.py` now searches joint space for a
+pose that actually puts the cube inside the frame (tip 50-60 mm up, cube 20-120 px from the
+corner) instead of commanding a textbook overhead pose.
+
+That also explains the earlier real frame: at the task pose the tool axis is tilted about
+65 deg from vertical, which brings the cube to the bottom-left of the frame rather than
+directly ahead.
+
 ## Still open
 
 **The camera's orientation, in two parts.**
