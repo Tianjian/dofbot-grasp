@@ -25,7 +25,7 @@ SEEDS = [
     (0.020, 0.140),
     (-0.060, 0.140),
     (0.060, 0.140),
-    (0.060, 0.100),  # closer than the others: 117 mm instead of 172 mm radius
+    (0.040, 0.100),  # close in: 108 mm radius; nearer than this the centring fails
 ]
 TASK_POSE = {1: 90.0 - 10.0, 2: 90.0 + 8.0, 3: 90.0 - 88.0, 4: 90.0 - 76.0, 5: 135.0}
 
