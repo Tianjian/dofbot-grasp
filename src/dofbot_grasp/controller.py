@@ -136,18 +136,28 @@ def move_tip(io, delta_m: np.ndarray, *, gain: float = 1.6, max_deg: float = 2.0
     io.command(target)
 
 
-def move_tip_to(io, target_xyz, *, max_iters: int = 140, tol: float = 0.005) -> bool:
+def move_tip_to(
+    io, target_xyz, *, max_iters: int = 140, tol: float = 0.005, contact_abort: bool = True
+) -> bool:
     """Walk the fingertip onto ``target_xyz`` with small damped steps.
 
-    A single IK solve looked tempting but stalls when the elbow sits on its limit; small
-    closed-loop steps keep working because each one is re-measured from the read-back.
+    Stops as soon as the tip stops following the command. Continuing to push after the
+    fingers touch something drove the cube clean through the table (a recorded lift of
+    -20 mm), so contact ends the descent instead of being averaged away.
     """
     target = np.asarray(target_xyz, float)
+    prev_z = None
+    stalled = 0
     for _ in range(max_iters):
         tip, _ = tip_and_axis(io.read_joints())
         err = target - tip
         if np.linalg.norm(err) < tol:
             return True
+        if contact_abort and prev_z is not None:
+            stalled = stalled + 1 if abs(tip[2] - prev_z) < 0.0004 else 0
+            if stalled >= 3:
+                return True  # blocked: treat the contact as the grasp height
+        prev_z = float(tip[2])
         # Descend with a pure height command. Feeding the lateral error as well let the
         # solver spend its joint budget correcting x/y, and it stalled with the elbow on
         # its limit; the centring stage is what keeps the tool axis on the cube.
@@ -267,18 +277,22 @@ def grasp(
         return {"ok": False, "reason": "back-projection failed"}
     say(f"cube at {np.round(est * 1000, 0)} mm")
 
-    # Descend along the tool axis that the centring just aligned, not towards the
-    # back-projected estimate: that estimate carries the silhouette-centroid bias (a few
-    # millimetres), and descending to it pushed the cube 10 mm across the table instead of
-    # straddling it.
+    # Descend straight down from where the centring left the tool axis. Moving laterally to
+    # the back-projected estimate first was tried and made things worse: that estimate
+    # carries an 8 mm silhouette bias, and steering to it put the fingers beside the cube.
     tip_now, _ = tip_and_axis(io.read_joints())
     target = np.array([tip_now[0], tip_now[1], GRASP.fingertip_grasp_z_m])
     if not move_tip_to(io, target, max_iters=80):
         return {"ok": False, "reason": "descent did not converge"}
     say("at grasp height")
 
-    io.command(io.read_joints(), gripper=JOINTS.gripper_shut_deg)
-    lift = dict(io.read_joints())
+    # Close with the arm frozen: re-command the pose it already holds, and change only the
+    # gripper. Every extra tip command during the close nudges the cube.
+    hold = io.read_joints()
+    io.command(hold, gripper=JOINTS.gripper_shut_deg)
+    say("closed, arm held still")
+
+    lift = dict(hold)
     lift[3] = lift[3] + 25.0
     io.command(lift, gripper=JOINTS.gripper_shut_deg)
     return {"ok": True, "cube": est.tolist()}
