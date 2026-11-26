@@ -45,7 +45,6 @@ from dofbot_grasp.params import (  # noqa: E402
     SAFETY,
     servo_to_joint,
 )
-from dofbot_grasp.perception import detect_cube  # noqa: E402
 
 
 # ---------------------------------------------------------------- bus plumbing
@@ -181,9 +180,18 @@ def grab_wrist() -> np.ndarray | None:
     return frame if ok else None
 
 
-def careful_detect(frame: np.ndarray, rel_sat: float = 140.0):
-    """Colour blob with a relaxed floor; SAM2 refines it when the GPU env is importable."""
-    return detect_cube(frame, white_balance=True, min_blob_saturation=rel_sat)
+_DETECTOR = None
+
+
+def careful_detect(frame: np.ndarray | None):
+    """Cube detection through the tracker front-end: SAM2 on the GPU, colour otherwise."""
+    from dofbot_grasp.tracker import make_detector
+
+    global _DETECTOR
+    if _DETECTOR is None:
+        _DETECTOR = make_detector()
+        print(f"detector: {getattr(_DETECTOR, 'name', 'colour')}")
+    return _DETECTOR(frame)
 
 
 # ---------------------------------------------------------------- main

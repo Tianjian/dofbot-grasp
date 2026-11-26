@@ -42,13 +42,21 @@ def sim_intrinsics(width: int = 320, height: int = 240, fovy_deg: float = 90.0) 
     }
 
 
-def make_detector():
-    """Adapter from the sim's RGB blob rule to the controller's dict interface.
+def make_detector(prefer_gpu: bool = False):
+    """Detector for the simulated frames.
+
+    SAM2 is available with ``--detector sam2`` where a GPU and torch exist; the CI runner
+    has neither, so the default stays the cheap RGB rule the simulator renders for.
 
     The rendered cube is an unlit orange-brown; ``perception.detect_cube`` thresholds HSV
     saturation for the real camera and does not fire on it, so the simulator keeps its own
     simple rule.
     """
+    if prefer_gpu:
+        from dofbot_grasp.tracker import make_detector as front_end
+
+        return front_end(prefer_gpu=True)
+
     sys.path.insert(0, str(ROOT / "sim"))
     import ibvs_sim as sim
 
@@ -63,7 +71,7 @@ def make_detector():
     return detect
 
 
-def run(seed, *, verbose: bool = False) -> dict:
+def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
     import mujoco
 
     from dofbot_grasp.controller import grasp
@@ -83,7 +91,7 @@ def run(seed, *, verbose: bool = False) -> dict:
     mujoco.mj_forward(model, data)
 
     before = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
-    result = grasp(io, make_detector(), log=print if verbose else None)
+    result = grasp(io, make_detector(prefer_gpu=use_gpu), log=print if verbose else None)
     after = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
     lift = (after - before) * 1000
     result.update({"seed": seed, "lift_mm": lift, "ok": bool(result.get("ok") and lift > 20)})
@@ -94,10 +102,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-rate", type=float, default=0.75)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--detector", choices=["colour", "sam2"], default="colour")
     ap.add_argument("--json", default=None, help="write the per-seed results here")
     args = ap.parse_args()
 
-    rows = [run(s, verbose=args.verbose) for s in SEEDS]
+    rows = [run(s, verbose=args.verbose, use_gpu=args.detector == "sam2") for s in SEEDS]
     wins = sum(r["ok"] for r in rows)
     rate = wins / len(rows)
     for r in rows:

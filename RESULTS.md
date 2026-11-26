@@ -40,6 +40,31 @@ way.
 Observer is placed at `(660, 280, 240) mm` aimed at `(80, 40, 150) mm`, 41 deg vertical
 field, with a black backdrop behind the arm as in the real cell.
 
+## Perception
+
+The wrist camera sees a 30 mm cube whose pale top face is less saturated (S~43) than the
+desk mat (S~104), so a saturation threshold only finds the lit front face. Its centroid
+is therefore biased towards that face, and a back-projected pixel turns the bias into
+aim error.
+
+SAM2 is point-prompted from the colour blob and returns the whole silhouette. Measured on
+four simulated wrist frames against the projection of the cube's true centre:
+
+| frame | colour centroid error | SAM2 centroid error |
+|---|---|---|
+| 0 | 8.2 px | 6.6 px |
+| 1 | 9.8 px | 4.0 px |
+| 2 | 3.3 px | 3.8 px |
+| 3 | 6.3 px | 1.8 px |
+| **mean** | **6.9 px** | **4.1 px** |
+
+So the GPU tracker removes about 40 % of the centroid bias, which is a large part of the
+11 mm back-projection residual noted below. It costs 134-863 ms per frame on an RTX 2060,
+which is why it is used for the 3-D fix while the colour blob keeps providing the prompt.
+
+`dofbot_grasp.tracker` picks the backend at import time and degrades to colour rather than
+raising, so a machine without CUDA still runs the pipeline.
+
 ## Simulation matches the arm
 
 | check | result |
