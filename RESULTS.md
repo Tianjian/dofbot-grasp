@@ -94,7 +94,10 @@ Wrist-camera IBVS, no camera-calibration guesswork in the loop:
 | (60, 140) mm | 152 mm | **52.2 mm** | 6 mm |
 | (40, 100) mm | 108 mm | **52.9 mm** | 58 mm |
 
-**All four seeds grasp**, lifting the cube 49-53 mm clear of the table. Drift is how far the
+**All four seeds grasp** with the simulation's original 90 deg camera field, lifting the
+cube 49-53 mm clear. That field turned out to be **3.4x wider than the real camera's
+26.6 deg** (`docs/camera-alignment.md`), and with the field corrected the same trial
+scores 0 of 4 -- the rate above did not transfer. Retuning is in progress. Drift is how far the
 cube travelled before the jaws closed: three of the four are clean (2-7 mm), the close-in
 one is shoved along and then gripped, which by the agreed criterion still counts.
 
