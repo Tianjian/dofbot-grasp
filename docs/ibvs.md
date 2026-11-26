@@ -50,13 +50,24 @@ rather than the old geometry's zero margin.
 
 ## Status
 
+A recorded run is in `sim/ibvs_sim.mp4` (left: wrist view, right: overview). Reviewing
+it frame by frame is what exposed the four control faults listed above -- the numbers
+alone looked plausible while the arm was climbing away from the cube.
+
 CENTRE converges from all four seeded positions, and with a 6 px deadband the cube
 lands within a pixel or two of the tool axis.
 
-The DESCEND phase is **not yet stable**: tracing it shows the tool tip ending up at
-z = 275 mm, far from the cube at (-30, -250) mm. Two causes, both in the controller
-rather than the hardware: the image Jacobian is identified once and reused while the
-arm travels far from where it was measured, and the coupled centring fights the
-descent (each adjusts q2/q3 in opposite directions). Re-identifying J every descent
-iteration, and letting the descent own q2/q3 while centring only trims the wrist, is
-the next step.
+DESCEND now works in closed loop: the tip goes 58.5 -> 12.5 mm in six iterations and
+stops at a reachable 16 mm. Getting there took four fixes, each found by watching the
+video: the descent must constrain **only the tip height** (asking for dx=dy=0 makes the
+least-squares step ~100 deg, which the per-joint clip then distorts), the command has
+to be **re-anchored to the achieved angles** each iteration (the servos hold ~1.5 deg
+of static error under gravity), the stop threshold must be **reachable** (12 mm was
+0.5 mm below the arm's limit, so it oscillated forever), and the descent is FK-driven
+because the cube legitimately leaves the frame.
+
+The **close still does not retain the cube**: the video shows the jaws arriving at the
+cube, but the cube stays on the table during the lift. Jaw interference is 1.35 mm per
+side, so the next suspects are contact friction and the moment the jaws meet the cube's
+top edge -- the grasp needs the fingers to descend past the cube's mid-height before
+closing.

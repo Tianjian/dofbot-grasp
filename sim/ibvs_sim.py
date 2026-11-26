@@ -30,7 +30,7 @@ IMG_W, IMG_H = 320, 240
 DEADBAND_PX = 6.0
 MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
-TIP_STOP_Z = 0.012  # close when the fingertip is at the cube's lower half
+TIP_STOP_Z = 0.016  # reachable minimum for this pose (12.5 mm) plus margin
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
 OPEN_L, OPEN_R = 0.008, -0.008  # the two finger slides, +ve opens each
 CLOSE_L, CLOSE_R = 0.0068, 0.0068   # +6.8 mm each -> inner faces +-13.65 mm
@@ -103,6 +103,32 @@ def _tip_and_axis(model, data):
     axis = data.xmat[l5].reshape(3, 3) @ np.array([0.0, 0.0, 1.0])
     axis /= np.linalg.norm(axis)
     return data.xpos[l5].copy() + FINGERTIP_Z * axis, axis
+
+
+def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=40):
+    """Lower the tip to ``z_target`` in FK closed loop.
+
+    The position servos hold a static error of ~1.5 deg under gravity, which is larger
+    than a single small joint step, so an open-loop descent can move the wrong way.
+    Each iteration measures the achieved tip height and adapts the step size.
+    """
+    for _ in range(max_iters):
+        tip, _ = _tip_and_axis(model, data)
+        if tip[2] <= z_target:
+            return True
+        # re-anchor the command to the achieved angles: the servos hold ~1.5 deg of
+        # static error, so accumulating commands in open loop runs away from the arm
+        for k in range(3):
+            q[k] = float(data.qpos[k])
+        before = tip[2]
+        descend_step(model, data, q, dz=dz * gain)
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
+        after = _tip_and_axis(model, data)[0][2]
+        if after >= before - 1e-4:          # did not go down: push harder
+            gain = min(gain * 1.8, 10.0)
+        else:
+            gain = max(gain * 0.9, 1.0)
+    return False
 
 
 def descend_step(model, data, q, dz=-0.004, damping=None):
@@ -219,35 +245,11 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     else:
         return {"ok": False, "reason": "centre did not converge", "trace": trace}
 
-    # ---- phase 2: descend along the tool axis, keeping the view direction --
-    for _step in range(120):
-        tip, _ = _tip_and_axis(model, data)
-        if tip[2] <= TIP_STOP_Z:
-            break
-        # the cube legitimately leaves the frame as the hand closes in; the descent
-        # is FK-driven, exactly as planned for the real arm (vision only aligns)
-        det = detect_cube(render(model, data, renderer))
-        ok = descend_step(model, data, q, dz=-0.004)
-        if not ok:
-            return {"ok": False, "reason": "descent IK failed"}
-        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
-        # keep the cube on the target pixel while closing in: descent and centring
-        # are coupled because the camera is offset from the tool axis
-        for _ in range(4):
-            det = detect_cube(render(model, data, renderer))
-            if det is None:
-                break
-            e = np.array([det["centre"][0] - tgt_u, det["centre"][1] - tgt_v])
-            if abs(e[0]) < DEADBAND_PX and abs(e[1]) < DEADBAND_PX:
-                break
-            dq = -LAMBDA * np.linalg.pinv(J) @ e
-            dq = np.clip(dq, -MAX_STEP_DEG, MAX_STEP_DEG)
-            q[0] += np.radians(dq[0])
-            q[1] += np.radians(dq[1])
-            q[2] += np.radians(dq[2])
-            servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], OPEN_L, OPEN_R]))
-    else:
-        return {"ok": False, "reason": "never reached contact"}
+    # ---- phase 2: descend to the grasp height (FK closed loop) -------------
+    # The cube legitimately leaves the frame as the hand closes in, so the descent is
+    # FK-driven; vision only aligned it. This mirrors the plan for the real arm.
+    if not descend_until(model, data, q, TIP_STOP_Z):
+        return {"ok": False, "reason": "descent did not reach the target height"}
 
     # ---- phase 3: close and lift ------------------------------------------
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], CLOSE_L, CLOSE_R]))
