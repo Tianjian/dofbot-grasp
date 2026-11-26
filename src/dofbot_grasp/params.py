@@ -40,7 +40,8 @@ class JointParams:
     gripper_open_deg: float = 20.0
     gripper_shut_deg: float = 140.0
     # Measured: the fingertips sit ~56 mm below the TCP point.
-    fingertip_below_tcp_m: float = 0.056
+    #: palm 40 mm tall, fingers 40 mm long hanging below it, TCP 50 mm above link5
+    fingertip_below_tcp_m: float = 0.090
 
 
 @dataclass(frozen=True)

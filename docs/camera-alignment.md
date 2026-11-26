@@ -101,6 +101,22 @@ That also explains the earlier real frame: at the task pose the tool axis is til
 65 deg from vertical, which brings the cube to the bottom-left of the frame rather than
 directly ahead.
 
+## The gripper's fingers hung through the palm
+
+The user spotted it in a recording: the finger boxes spanned link5 `-6 .. +40 mm` while the
+palm (`link5_geom` 0..24 mm plus `gripper_base` 20..40 mm) occupies `0 .. 40 mm`, so the
+fingers passed straight through the palm.
+
+They now hang below it: 40 mm long, `-40 .. 0 mm`, touched only at the palm's underside
+(`sim/gripper_geometry.png`). That changes where the fingertips are: 90 mm below the TCP
+rather than 56, because the palm is 40 mm tall and the fingers hang another 40 below it.
+
+This has a consequence worth stating plainly. With the fingertips 90 mm below the TCP, the
+camera -- 56 mm off the tool axis, 25 mm above the fingertips -- only sees the cube when the
+arm is high, and the arm is then too high to reach it: a joint sweep finds poses where the
+cube is in frame *and* the fingertips clear its top for only two of the four cube positions,
+and none for the other two.
+
 ## Still open
 
 **The camera's orientation, in two parts.**

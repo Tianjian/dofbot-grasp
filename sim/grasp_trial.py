@@ -55,7 +55,9 @@ def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
                     5: 135.0,
                 }
                 tip, _ = tip_and_axis(pose)
-                if not (0.05 < tip[2] < 0.20):
+                # the fingertips hang 40 mm below the palm now, so clearing the cube's
+                # 30 mm top is the binding constraint, not a tidy "high" pose
+                if tip[2] < 0.040:
                     continue
                 C, R = camera_pose(pose)
                 pc = (np.array([seed[0], seed[1], 0.015]) - C) @ R
