@@ -73,7 +73,16 @@ arm the camera hangs off the forearm while the jaws sit on the rotating gripper 
   in simulation;
 * the view was a straight-down look with the fingers in the middle of it.
 
-The mount is now registered to the caliper measurements rather than eyeballed: 23 mm
+The mount is registered to the **camera geometry that is actually in the mesh**. The
+STL was split into its connected components and each candidate was rendered with a
+marker sphere (`sim/ibvs_camera_candidates.png`); the real camera sits on the 24x24x30
+mm part at link4 **(-48.4, -57.6, -0.7) mm**, i.e. **57.6 mm to the -y side** -- the
+earlier caliper reading had been applied on the wrong side of the axis, a mirror error.
+Its position was then nudged 10 mm further along the optical axis to -58.4 mm so the
+virtual camera clears the lens barrel modelled in the mesh (otherwise a ring fills the
+centre of the frame).
+
+Earlier note, now superseded by the mesh registration: the caliper values: 23 mm
 back from the flange and 50 mm lateral puts the camera at link4 x = -50.85 mm, and the
 roll is **flipped 180 deg** about the optical axis. Without the flip the world vertical
 maps to the image vertical in the wrong sense -- "the horizon is upside down" -- and
