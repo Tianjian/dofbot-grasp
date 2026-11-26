@@ -25,7 +25,7 @@ SEEDS = [
     (0.020, 0.140),
     (-0.060, 0.140),
     (0.060, 0.140),
-    (0.040, 0.100),  # close in: 108 mm radius; nearer than this the centring fails
+    (0.100, 0.140),  # every seed must be somewhere the wrist camera can actually see
 ]
 TASK_POSE = {1: 90.0 - 10.0, 2: 90.0 + 8.0, 3: 90.0 - 88.0, 4: 90.0 - 76.0, 5: 135.0}
 
@@ -33,6 +33,45 @@ TASK_POSE = {1: 90.0 - 10.0, 2: 90.0 + 8.0, 3: 90.0 - 88.0, 4: 90.0 - 76.0, 5: 1
 def joint_angles_of(servo: dict[int, float]) -> np.ndarray:
     """Servo degrees -> joint radians, for seeding the IK."""
     return np.radians(np.array([servo[i] - (90.0 if i < 5 else 135.0) for i in range(1, 6)]))
+
+
+def visible_pose_candidates(seed: tuple[float, float], limit: int = 12) -> list[dict[int, float]]:
+    """Ranked joint poses that should put ``seed`` in view, best first.
+
+    The analytic projection is only good to a few tens of pixels, so a pose can pass the
+    test and still render without the cube. The caller renders and confirms.
+    """
+    from dofbot_grasp.controller import camera_pose, tip_and_axis
+
+    intr = real_wrist_intrinsics()
+    f, cx, cy = intr["fy"], intr["cx"], intr["cy"]
+    scored: list[tuple[float, dict[int, float]]] = []
+    for j1 in range(40, 141, 10):
+        for j2 in range(40, 141, 5):
+            for j3 in range(-40, 81, 10):
+                pose = {
+                    1: float(j1),
+                    2: float(j2),
+                    3: float(j3),
+                    4: float(j2 + j3 - 90.0),
+                    5: 135.0,
+                }
+                tip, _ = tip_and_axis(pose)
+                if tip[2] < 0.040:
+                    continue
+                C, R = camera_pose(pose)
+                pc = (np.array([seed[0], seed[1], 0.015]) - C) @ R
+                depth = -pc[2]
+                if depth <= 1e-6:
+                    continue
+                u = cx + f * pc[0] / depth
+                v = cy - f * pc[1] / depth
+                if not (30.0 < u < 610.0 and 30.0 < v < 450.0):
+                    continue
+                d = float(np.hypot(u - 0.4 * 640.0, v - 0.6 * 480.0))
+                scored.append((d, pose))
+    scored.sort(key=lambda kv: kv[0])
+    return [p for _d, p in scored[:limit]]
 
 
 def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
@@ -152,13 +191,28 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float
     jadr = data.qpos
     cube = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")]
     jadr[cube : cube + 3] = [seed[0], seed[1], 0.015]
-    # start where the camera can actually see the cube: a fixed task pose cannot work with
-    # a 26.6 deg field and a camera 56 mm off the tool axis
-    start_pose = find_visible_pose(seed)
-    for i in range(1, 6):
-        jadr[
-            model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")]
-        ] = math.radians(start_pose[i] - (90.0 if i < 5 else 135.0))
+    # start where the camera can actually see the cube. The analytic search only ranks
+    # candidates -- the projection is good to tens of pixels -- so each one is rendered and
+    # the detector decides, which is what a real search would do.
+    detector = make_detector(prefer_gpu=use_gpu)
+    start_pose = None
+    for cand in visible_pose_candidates(seed):
+        for i in range(1, 6):
+            jadr[
+                model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")]
+            ] = math.radians(cand[i] - (90.0 if i < 5 else 135.0))
+        mujoco.mj_forward(model, data)
+        if detector(io.capture_wrist()) is not None:
+            start_pose = cand
+            break
+    if start_pose is None:
+        return {
+            "ok": False,
+            "reason": "no pose sees the cube",
+            "seed": seed,
+            "lift_mm": 0.0,
+            "drift_mm": 0.0,
+        }
     mujoco.mj_forward(model, data)
 
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
@@ -173,7 +227,7 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float
 
     result = grasp_prior(
         io,
-        make_detector(prefer_gpu=use_gpu),
+        detector,
         on_stage=on_stage,
         log=print if verbose else None,
     )
