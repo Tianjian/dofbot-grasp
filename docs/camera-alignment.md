@@ -87,7 +87,23 @@ to f = 1016.6 px for the wrist and 640.2 px for the observer, against 1016.6 and
 
 ## Still open
 
-**The camera's orientation.** With both the intrinsics and the field of view now right,
+**The camera's orientation, in two parts.**
+
+The first part is settled. `sim/camera_orientation_problem.png` shows it: the real wrist
+frame puts the cube bottom-left at (39, 297), while the simulation, given the same pose and
+the cube at the position the real frame back-projects to, draws it top-right at (559, 188).
+Both coordinates flip, which is the signature of a half turn about the optical axis.
+
+Rolling the camera 180 deg takes that error from **533 px to 41 px**, and a 3-degree
+refinement of the orientation brings the cube to (77, 296) -- see
+`sim/camera_orientation_fixed.png`.
+
+The second part is not settled: in that corrected frame the cube is now on the right side,
+but the gripper still is not where the real frame puts it. One point constraint fixes where
+the cube lands and leaves the rotation about the camera-to-cube line free, and that free
+rotation moves the gripper. A second landmark is required; the cube alone cannot do it.
+
+**Earlier note:** With both the intrinsics and the field of view now right,
 a cube placed at the position the real frame back-projects to still renders on the wrong
 side of the image -- roughly a half turn about the optical axis. Fitting a single frame
 cannot settle this: one point fixes the pointing direction but leaves the roll free (a
