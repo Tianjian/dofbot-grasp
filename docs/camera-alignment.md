@@ -41,8 +41,14 @@ was a guess. Measured off the bench:
 | aim | tilted **up 13 deg** |
 | field | 41.1 deg vertical, from fx 639.9 |
 
-Rendered at that pose beside the real frame (`/tmp/obs_final.png` during the session), the
-arm's pose, orientation and proportions line up. What does not line up is size: the arm
+Rendered at that pose beside the real frame, the arm's pose, orientation and proportions
+line up (`sim/observer_alignment.png`).
+
+The sign of the x offset is settled by rendering all four combinations
+(`sim/observer_camera_signs.png`). The real frame has the gripper on the **right** of the
+base; `(-410, -350)` mirrors that and points the fingers left, and `(-410, +350)` does the
+same. Only `(+410, -350)` and `(+410, +350)` put the fingers right, and of those
+`(+410, -350)` matches the arm's size and angle. What does not line up is size: the arm
 appears about 20 % larger in the real frame, which is what a stand under the base would do
 by lifting the arm toward the camera.
 
