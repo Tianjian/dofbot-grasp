@@ -17,7 +17,7 @@ sys.path.insert(0, "/home/toby/Desktop/dofbot-grasp/sim")
 import ibvs_sim as S  # noqa: E402
 
 OUT = "/home/toby/Desktop/dofbot-grasp/sim/ibvs_sim.mp4"
-SEED = (-0.020, -0.140)   # collision-free graspable core
+SEED = (0.020, 0.140)   # the +y region the real arm works in
 W, H = 480, 360
 
 
@@ -44,7 +44,7 @@ def main():
         j: model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, j)]
         for j in ("joint1", "joint2", "joint3", "joint4", "joint5")
     }
-    q = np.array([0.0, -0.0873, 1.3963, 1.5708, 1.0])
+    q = np.array([-0.1745, 0.1396, -1.5359, -1.3265, 1.0])
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     data.qpos[-7:-4] = [SEED[0], SEED[1], S.CUBE_Z]
