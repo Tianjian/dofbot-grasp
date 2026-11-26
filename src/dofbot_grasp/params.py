@@ -53,7 +53,8 @@ class MountParams:
     # link4's -x; the roll is 180 deg about that axis (otherwise the image is upside down
     # and every vertical IBVS correction goes the wrong way).
     t_link4_cam_mm: tuple[float, float, float] = (-58.4, -57.6, -0.7)
-    roll_deg: float = 180.0
+    #: roll about the optical axis, fitted so the analytic camera matches the rendered one
+    roll_deg: float = 3.5
     # The caliper numbers that first placed it (23 mm back, 50 mm lateral) had the
     # lateral offset on the wrong side of the axis.
 

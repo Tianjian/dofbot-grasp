@@ -121,6 +121,20 @@ arm is high, and the arm is then too high to reach it: a joint sweep finds poses
 cube is in frame *and* the fingertips clear its top for only two of the four cube positions,
 and none for the other two.
 
+## The analytic camera now matches the render
+
+Three convention errors were stacked, and together they made the controller's camera model
+disagree with what the simulation draws by **over a thousand pixels**:
+
+* the model rotated about `+z` while MuJoCo cameras look along `-z`;
+* the pose search tested `pc[2] > 0` for "in front", which under MuJoCo's convention is
+  always false, so every candidate pose was rejected as seeing nothing;
+* the roll was a leftover from the OpenCV convention.
+
+With the model expressed in MuJoCo's convention and the roll fitted against the rendered
+camera, the two agree to a **25 px mean**. That mattered: the pose search had been choosing
+viewpoints that cannot see the cube, which is why seeds kept reporting "cube not visible".
+
 ## Still open
 
 **The camera's orientation, in two parts.**

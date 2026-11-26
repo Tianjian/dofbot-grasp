@@ -61,10 +61,11 @@ def find_visible_pose(seed: tuple[float, float]) -> dict[int, float]:
                     continue
                 C, R = camera_pose(pose)
                 pc = (np.array([seed[0], seed[1], 0.015]) - C) @ R
-                if pc[2] <= 1e-6:
+                depth = -pc[2]  # MuJoCo cameras look along -z
+                if depth <= 1e-6:
                     continue
-                u = cx + f * pc[0] / pc[2]
-                v = cy + f * pc[1] / pc[2]
+                u = cx + f * pc[0] / depth
+                v = cy - f * pc[1] / depth
                 if not (20.0 < u < 620.0 and 20.0 < v < 460.0):
                     continue
                 d = float(np.hypot(u - 0.35 * 640.0, v - 0.55 * 480.0))

@@ -66,10 +66,15 @@ def cam_in_link5() -> np.ndarray:
 
 
 def cam_rotation_in_link5(roll_deg: float) -> np.ndarray:
-    """Camera -> link5. OpenCV puts the optical axis on +z, the tool axis is +z too."""
+    """Camera -> link5, in MuJoCo's convention (-z along the optical axis).
+
+    The simulation renders with MuJoCo's camera convention, so the analytic model uses it
+    too; mixing the two put its prediction a thousand pixels away and the pose search then
+    chose viewpoints that could not see the cube at all.
+    """
     import cv2
 
-    z = np.array([0.0, 0.0, 1.0])
+    z = np.array([0.0, 0.0, -1.0])  # MuJoCo cameras look along -z
     x0 = np.array([1.0, 0.0, 0.0])
     base = np.column_stack([x0, np.cross(z, x0), z])
     return base @ cv2.Rodrigues(z * math.radians(roll_deg))[0]
