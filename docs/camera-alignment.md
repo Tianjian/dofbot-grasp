@@ -107,9 +107,13 @@ The user spotted it in a recording: the finger boxes spanned link5 `-6 .. +40 mm
 palm (`link5_geom` 0..24 mm plus `gripper_base` 20..40 mm) occupies `0 .. 40 mm`, so the
 fingers passed straight through the palm.
 
-They now hang below it: 40 mm long, `-40 .. 0 mm`, touched only at the palm's underside
-(`sim/gripper_geometry.png`). That changes where the fingertips are: 90 mm below the TCP
-rather than 56, because the palm is 40 mm tall and the fingers hang another 40 below it.
+They now continue from its front face: 40 mm long, `40 .. 80 mm` along the tool axis
+(`sim/gripper_geometry.png`). Putting them at `-40 .. 0` first was wrong in the other
+direction -- that hangs them back towards the arm, which reads as a gripper mounted upside
+down, and the user caught it in the recording.
+
+The fingertip is therefore 80 mm out from link5 along the tool axis, 30 mm beyond the TCP
+(which sits at 50 mm).
 
 This has a consequence worth stating plainly. With the fingertips 90 mm below the TCP, the
 camera -- 56 mm off the tool axis, 25 mm above the fingertips -- only sees the cube when the
