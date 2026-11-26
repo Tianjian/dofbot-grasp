@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "sim"))
 
 import grasp_trial as trial  # noqa: E402
 
-from dofbot_grasp.controller import grasp  # noqa: E402
+from dofbot_grasp.controller import grasp, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
@@ -30,10 +30,22 @@ FPS = 30.0  # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)
 W, H = 480, 360
 
 
-def label(img, text):
+def label(img, text, foot=""):
     out = img.copy()
     cv2.rectangle(out, (0, 0), (out.shape[1], 24), (0, 0, 0), -1)
     cv2.putText(out, text, (8, 17), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    if foot:
+        cv2.rectangle(out, (0, out.shape[0] - 22), (out.shape[1], out.shape[0]), (0, 0, 0), -1)
+        cv2.putText(
+            out,
+            foot,
+            (8, out.shape[0] - 7),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (200, 255, 200),
+            1,
+            cv2.LINE_AA,
+        )
     return out
 
 
@@ -50,13 +62,36 @@ def main() -> int:
     renderer = mujoco.Renderer(model, height=240, width=320)
     state = {"n": 0, "phase": "", "seed": ""}
 
+    cube_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+
+    def current_info() -> str:
+        """Fingertip, cube and their table-plane separation -- the drift is invisible."""
+        try:
+            pose = {}
+            for i in range(1, 6):
+                jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")
+                pose[i] = float(np.degrees(data.qpos[model.jnt_qposadr[jid]])) + (
+                    90.0 if i < 5 else 135.0
+                )
+            tip, _ = tip_and_axis(pose)
+            cube = data.xpos[cube_id]
+            off = float(np.linalg.norm(tip[:2] - cube[:2])) * 1000
+            return (
+                f"tip ({tip[0] * 1000:.0f},{tip[1] * 1000:.0f},{tip[2] * 1000:.0f})  "
+                f"cube ({cube[0] * 1000:.0f},{cube[1] * 1000:.0f},{cube[2] * 1000:.0f})  "
+                f"xy gap {off:.0f} mm"
+            )
+        except Exception as exc:  # never let a label break a recording
+            return f"(label error: {type(exc).__name__})"
+
     def grab():
         views = []
         for cam in ("wrist_cam", "overview"):
             renderer.update_scene(data, camera=cam)
             views.append(cv2.resize(cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR), (W, H)))
-        a = label(views[0], f"{state['seed']}  wrist  {state['phase']}")
-        b = label(views[1], f"observer  t={data.time:.0f}s")
+        info = current_info()
+        a = label(views[0], f"{state['seed']}  wrist  {state['phase']}", info)
+        b = label(views[1], f"{state['phase']}  t={data.time:.0f}s", info)
         writer.write(np.hstack([a, b]))
 
     real_step = mujoco.mj_step
@@ -70,7 +105,7 @@ def main() -> int:
     mujoco.mj_step = step_and_capture
     io = SimRobot(model, data)
     try:
-        for tag in args.seeds.split(","):
+        for tag in [t for t in args.seeds.split(",") if t.strip()]:
             idx = int(tag)
             seed = trial.SEEDS[idx]
             state["seed"] = f"seed{idx} {seed}"
