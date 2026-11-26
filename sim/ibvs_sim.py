@@ -272,7 +272,8 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
 
     data.qpos[cube_adr : cube_adr + 2] = seed_cube_xy
     data.qpos[cube_adr + 2] = CUBE_Z
-    q = np.array([0.0, 0.55, 0.9, 1.0, 1.0])
+    # aimed at the middle of the graspable band so the seeds stay in view
+    q = np.array([0.0, -0.0873, 1.3963, 1.5708, 1.0])
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     ctrl = np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN])
@@ -362,7 +363,9 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
 if __name__ == "__main__":
     import sys
 
-    seeds = [(-0.030, -0.250), (0.020, -0.270), (-0.010, -0.230), (-0.045, -0.285)]
+    # Kinematic sampling puts the graspable band at y in [-200, -20] mm; the old
+    # seeds at y < -230 were outside it, which is why they read as "ungraspable".
+    seeds = [(-0.060, -0.140), (0.020, -0.120), (-0.020, -0.170), (0.060, -0.100)]
     wins = 0
     for sx, sy in seeds:
         res = run_once((sx, sy), verbose="-v" in sys.argv)

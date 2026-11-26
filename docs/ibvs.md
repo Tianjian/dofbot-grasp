@@ -31,6 +31,18 @@ So the controller consumes only the tracker's centroid and area
 | descent stop | fingertip z <= 12 mm (FK) | area saturates at ~7 % because the camera looks along the tool axis and the cube sinks below the view as the hand closes |
 | descent is FK-only | yes | the cube legitimately leaves the frame; vision only aligns, as planned for the real arm |
 
+## Place the cube inside the graspable band
+
+Sampling the kinematics for fingertip points near the table with a near-vertical tool
+puts the graspable band at **y in [-200, -20] mm, x in [-200, +160] mm**. The original
+seeds sat at y = -250 to -285 mm, i.e. outside it, which is why they behaved as
+"impossible half of the table" rather than as a controller problem. A pose aimed at the
+band's centre (q = [0, -5, 80, 90] deg) keeps a cube anywhere in the band inside the
+wrist view.
+
+With seeds inside the band the recorded run centres cleanly (+83 -> -1.3 px) and the
+side-entry approach closes to within ~35 mm of the cube.
+
 ## The camera belongs on link4, not link5
 
 Mounting the wrist camera on link5 (next to the jaws) was wrong twice over. On the real
