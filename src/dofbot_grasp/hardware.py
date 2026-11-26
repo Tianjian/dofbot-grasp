@@ -69,6 +69,7 @@ class SimRobot:
         observer_camera="overview",
         img_w=320,
         img_h=240,
+        real_cameras: dict[str, object] | None = None,
     ) -> None:
         import mujoco
 
@@ -80,6 +81,11 @@ class SimRobot:
         self.observer_camera = observer_camera
         self.img_w = img_w
         self.img_h = img_h
+        # Optional RealCamera per view. A MuJoCo camera is a symmetric pinhole with no
+        # distortion; the real wrist lens has its principal point 50 px off centre and
+        # k1 -0.50. Rendering through the measured intrinsics makes the simulated frame
+        # have the same geometry as the real one, which is what a fair comparison needs.
+        self.real_cameras = real_cameras or {}
 
     # -- joints ---------------------------------------------------------
     def _addr(self, name: str) -> int:
@@ -123,8 +129,25 @@ class SimRobot:
 
     # -- vision ---------------------------------------------------------
     def _render(self, camera: str) -> np.ndarray:
-        self.renderer.update_scene(self.data, camera=camera)
-        return self.renderer.render().copy()
+        rc = self.real_cameras.get(camera)
+        if rc is None:
+            self.renderer.update_scene(self.data, camera=camera)
+            return self.renderer.render().copy()
+        width, height, fovy = rc.render_geometry()
+        cid = self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_CAMERA, camera)
+        saved_fovy = float(self.model.cam_fovy[cid])
+        big = self._mj.Renderer(self.model, height=height, width=width)
+        try:
+            self.model.cam_fovy[cid] = fovy
+            big.update_scene(self.data, camera=camera)
+            frame = big.render().copy()
+        finally:
+            self.model.cam_fovy[cid] = saved_fovy
+        ox, oy = rc.sample_offsets()
+        ox = min(ox, max(0, width - rc.width))
+        oy = min(oy, max(0, height - rc.height))
+        cropped = frame[oy : oy + rc.height, ox : ox + rc.width]
+        return rc.apply(cropped) if cropped.shape[:2] == (rc.height, rc.width) else frame
 
     def capture_wrist(self) -> np.ndarray | None:
         return self._render(self.wrist_camera)

@@ -64,9 +64,39 @@ cube on the desk means going below the base plane, not 10 mm above it.
 
 The exact height has to be measured with a rule; the image only bounds it.
 
+## Intrinsics: focal length matches, the rest did not
+
+| term | real | simulation (MuJoCo pinhole) | |
+|---|---|---|---|
+| wrist focal | 1016.6 px | 1015.3 px | matches, 0.1 % |
+| wrist principal point | (269.8, 245.7) | image centre | **50 px off in x** |
+| wrist distortion | k1 -0.495, k2 +0.509 | none | edge error ~13 px |
+| observer focal | 640.2 px | 640.2 px | matches exactly |
+| observer principal point | (281.9, 290.4) | image centre | 38 px / 50 px off |
+| observer distortion | k1 -0.073 | none | mild |
+
+MuJoCo cameras are symmetric pinholes: the principal point is the image centre and there is
+no lens distortion. The focal lengths now match because the fields of view were derived
+from them, but the other two terms did not, and 50 px is 2.8 deg of pointing error -- more
+than the grasp tolerance allows.
+
+`sim/real_camera.py` closes that gap: it renders at the real focal length on a wider canvas
+and resamples through the measured intrinsics, so the simulated frame has the same geometry
+as the real one, distortion included. Verified by construction: the render geometry solves
+to f = 1016.6 px for the wrist and 640.2 px for the observer, against 1016.6 and 640.2 real.
+
 ## Still open
 
-The simulation's camera quaternion is only approximate. Enumerating the 24 axis-aligned
+**The camera's orientation.** With both the intrinsics and the field of view now right,
+a cube placed at the position the real frame back-projects to still renders on the wrong
+side of the image -- roughly a half turn about the optical axis. Fitting a single frame
+cannot settle this: one point fixes the pointing direction but leaves the roll free (a
+one-point fit reaches 0.0 px with three free angles and still looks mirrored). It needs two
+or three arm poses with the cube fixed, or a second landmark in the same frame. The dark
+gripper bar was the obvious second landmark but a simple darkness threshold did not find it,
+so that has to be done properly.
+
+Separately, the quaternion is only axis-aligned approximate. Enumerating the 24 axis-aligned
 orientations, the closest to the real pixel is `quat 0.7071 0 0.7071 0`, which lands
 `41 px` away -- the true mount is not axis-aligned in link5. The sim needs that rotation
 refined to about the degree level, or the two cameras will keep disagreeing by tens of

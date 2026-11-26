@@ -8,7 +8,7 @@
   <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
 
   <visual>
-    <global offwidth="640" offheight="480"/>
+    <global offwidth="1024" offheight="1024"/>
     <headlight diffuse="0.35 0.35 0.35" ambient="0.22 0.22 0.22" specular="0.1 0.1 0.1"/>
   </visual>
 
@@ -35,7 +35,7 @@
          silhouette and makes the simulated observer frame comparable with the photos -->
     <geom name="backdrop" type="box" size="0.90 0.01 0.55" pos="0.0 0.62 0.55"
           rgba="0.03 0.03 0.035 1" contype="0" conaffinity="0"/>
-    <camera name="overview" pos="0.4100 -0.3500 0.0250" xyaxes="0.649262 0.760565 -0.000000 0.171801 -0.146659 0.974154" fovy="41.1"/>
+    <camera name="overview" pos="0.4100 0.3500 0.0250" xyaxes="-0.649262 0.760565 0.000000 0.171801 0.146659 0.974154" fovy="41.1"/>
     <light pos="0.2 -0.4 0.9" dir="-0.2 0.4 -0.9" directional="true" diffuse="0.40 0.40 0.40"/>
     <light pos="-0.3 0.2 0.7" dir="0.3 -0.2 -0.7" directional="true" diffuse="0.22 0.22 0.22"/>
     <geom name="floor" type="plane" size="0 0 0.01" pos="0 0 -0.02" material="table_mat"/>
