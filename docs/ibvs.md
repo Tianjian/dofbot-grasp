@@ -1,3 +1,10 @@
+> **Historical.** The pipeline this describes -- image-based servoing on the tool-axis
+> pixel, with a per-step image Jacobian -- is no longer in the controller. It was
+> removed once the geometric analysis showed the tool-axis pixel falls outside the
+> real 26.6 deg field, so the target it servos to does not exist. The reasoning and
+> measurements below are kept because they explain why the current controller measures
+> the cube once and then drives IK. See `docs/camera-alignment.md`.
+
 # Image-based visual servoing (IBVS)
 
 The grasp sequence needs no camera extrinsic because the wrist camera points down

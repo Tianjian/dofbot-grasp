@@ -54,7 +54,6 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "sim" / "controller_sim.mp4"))
     ap.add_argument("--seeds", default="0,1,2,3,", help="indices into grasp_trial.SEEDS")
-    ap.add_argument("--jaw-offset", type=float, default=0.0)
     args = ap.parse_args()
 
     writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W * 2, H))
