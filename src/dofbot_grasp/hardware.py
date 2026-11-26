@@ -238,6 +238,8 @@ def _make_arm(port: str, baud: int):
 
     script = Path(__file__).resolve().parents[2] / "scripts" / "run_ibvs_real.py"
     spec = importlib.util.spec_from_file_location("_real_arm", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load the serial wrapper from {script}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.Arm(port=port, baud=baud)

@@ -199,10 +199,12 @@ def align_jaws(io) -> float:
         score = max(abs(horiz[0]), abs(horiz[1]))
         if best is None or score > best[0]:
             best = (score, float(deg))
+    if best is None:
+        return 0.0
     target = dict(pose)
     target[5] = JOINTS.offsets_deg[5] + best[1]
     io.command(target)
-    return best[1]
+    return float(best[1])
 
 
 # ---------------------------------------------------------------- sequence

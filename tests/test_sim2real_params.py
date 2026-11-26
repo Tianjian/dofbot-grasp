@@ -40,7 +40,7 @@ def test_joint_limits_match_the_bus():
 
 def test_gripper_stroke_closes_on_a_cube():
     """Open jaws clear the cube, shut jaws grip it."""
-    cube_half = GRASP.cube_edge_m / 2
+    assert GRASP.cube_edge_m > 0.0
     assert JOINTS.gripper_open_deg < JOINTS.gripper_shut_deg
 
 
@@ -71,4 +71,4 @@ def test_backprojection_round_trips_a_table_point():
 
     est = run_real.backproject_to_table(float(uv[0]), float(uv[1]), servo, intr)
     assert est is not None
-    assert est[:2] == pytest.approx(target[:2], abs=0.02)   # 20 mm, distortion included
+    assert est[:2] == pytest.approx(target[:2], abs=0.02)  # 20 mm, distortion included
