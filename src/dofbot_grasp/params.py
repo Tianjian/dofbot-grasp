@@ -76,6 +76,12 @@ class GraspParams:
     # Image-space servoing.
     deadband_px: float = 8.0  # ~6 mm at grasp range; the jaws tolerate ~10 mm
     max_step_deg: float = 2.0
+    #: per-joint cost in the centring solve; the wrist is expensive so the shoulder
+    #: and elbow do the reaching instead of the arm folding up on a pinned j4
+    joint_weights: tuple[float, ...] = (1.0, 1.0, 1.0, 6.0)
+    #: per-joint step cap in degrees; capping every joint at 2 deg hid the weighting
+    #: entirely because each step saturated
+    max_step_per_joint: tuple[float, ...] = (2.0, 2.0, 2.0, 0.5)
     gain: float = 0.5
     # Per-step joint steps used to identify the image Jacobian.
     probe_deg: float = 3.0

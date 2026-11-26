@@ -210,7 +210,7 @@ def _solve_pixel_step(J: np.ndarray, err: np.ndarray, pose: dict[int, float]) ->
     Leaving a saturated joint in the solve wastes the whole step on it: with j4 pinned at
     -90 deg the y error sat at 23 px for fifty iterations while nothing moved.
     """
-    dq = -GRASP.gain * np.linalg.pinv(J) @ err
+    dq = _weighted_step(J, err, len(GRASP.joint_weights))
     for _ in range(3):
         for k in range(J.shape[1]):
             lo = -JOINTS.offsets_deg[k + 1]
@@ -219,8 +219,24 @@ def _solve_pixel_step(J: np.ndarray, err: np.ndarray, pose: dict[int, float]) ->
             if (qk <= lo + 0.5 and dq[k] < 0) or (qk >= hi - 0.5 and dq[k] > 0):
                 J = J.copy()
                 J[:, k] = 0.0
-                dq = -GRASP.gain * np.linalg.pinv(J) @ err
-    return np.clip(dq, -GRASP.max_step_deg, GRASP.max_step_deg)
+                dq = _weighted_step(J, err, len(GRASP.joint_weights))
+    caps = np.asarray(GRASP.max_step_per_joint[: len(dq)], dtype=float)
+    return np.clip(dq, -caps, caps)
+
+
+def _weighted_step(J: np.ndarray, err: np.ndarray, n: int) -> np.ndarray:
+    """Least-squares pixel step with per-joint cost.
+
+    Unweighted, the solver happily folds the wrist to its limit and leaves the shoulder
+    barely rotated, which parks the arm in a configuration it cannot reach past. Costing
+    the wrist more than the shoulder and elbow makes it extend instead.
+    """
+    W = np.diag(np.asarray(GRASP.joint_weights[:n], dtype=float))
+    Winv = np.linalg.inv(W)
+    JT = J.T @ Winv
+    lam = 1e-2 * float(np.trace(J @ Winv @ J.T)) / 2.0
+    dq = -GRASP.gain * JT @ np.linalg.solve(J @ Winv @ J.T + lam * np.eye(2), err)
+    return dq
 
 
 def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarray | None:
