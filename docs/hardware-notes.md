@@ -342,6 +342,36 @@ closed on air. Grasping a 30 mm cube needs the fingertips at roughly 8 mm, i.e.
 Gripper travel is also narrower than the servo range: commanded 175 deg it stops at
 140 deg open, and closes to about 12 deg. Treat the usable opening as ~140 deg.
 
+## Localising the cube with the wrist camera alone
+
+The cube is known (30 mm, on a flat desk) and the intrinsics are known, so its
+apparent **area** measures range: ``r = f·a·√k/√A``. Combined with the flat-desk
+constraint (centre at z = 15 mm) that turns localisation into a tiny least-squares
+fit over the camera centres only -- no camera orientation, no baseline tricks:
+
+```
+|X - C_i|^2 = k·(f·a)^2 / A_i          for each view i
+```
+
+Eight views (j1 x j2 grid, 21 mm of camera baseline) solve ``X`` and ``k`` with the
+per-view range residuals inside +-6.6 mm, and an independent three-view set from a
+different sweep agrees to 3 mm:
+
+| dataset | views | X (mm) | k |
+|---|---|---|---|
+| j2 sweep | 3 | (-61.8, 54.8, 15.0) | 0.63 |
+| j1 x j2 grid | 8 | **(-59.2, 55.5, 15.0)** | 0.58 |
+
+So the cube sits at **radius 81 mm, azimuth 137 deg**, comfortably inside the
+top-down graspable envelope.
+
+Two caveats worth keeping: ``k`` comes out near 0.58 rather than the ~1.0 a face-on
+cube would give, so it is absorbing a systematic (most likely the silhouette is not
+a full face), and projecting ``X`` back into a new image still fails by hundreds of
+pixels -- because that needs the **mount orientation**, which remains the one
+genuinely unknown quantity. The range-only formulation sidesteps it; anything that
+uses image coordinates does not.
+
 ## Still unmeasured
 
 - Camera intrinsics (`fx, fy, cx, cy, distortion`) — no calibration target used yet.
