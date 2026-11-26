@@ -21,8 +21,20 @@ class RobotIO(Protocol):
     def read_joints(self) -> dict[int, float]:
         """Servo angles in degrees, ids 1..5."""
 
-    def command(self, target: dict[int, float], gripper: float | None = None) -> dict[int, float]:
-        """Move to ``target`` (servo degrees) and return the settled read-back."""
+    def command(
+        self, target: dict[int, float] | None, gripper: float | None = None
+    ) -> dict[int, float]:
+        """Move to ``target`` (servo degrees) and return the settled read-back.
+
+        ``target=None`` means "leave the joints exactly as commanded and only change the
+        gripper" -- that is what closing the jaws needs, and re-sending the read-back as a
+        target instead nudges the arm by its own static error.
+
+        ``gripper`` is a closure **fraction**, 0 = jaws apart, 1 = shut. Each backend maps
+        it to its own units: the simulator drives a slide in metres, the arm a servo in
+        degrees. Passing degrees to the simulator used to work only because ``ctrlrange``
+        clipped the number.
+        """
 
     def capture_wrist(self) -> np.ndarray | None:
         """One RGB frame from the wrist camera."""
@@ -91,13 +103,15 @@ class SimRobot:
         dt = float(self.model.opt.timestep)
         ramp = max(1, int(BUS.move_time_s / dt))
         start = self.data.ctrl.copy()
-        goal = np.array(
-            [target[i] - JOINTS.offsets_deg[i] for i in range(1, 6)]
-            + [gripper if gripper is not None else GRASP.deadband_px * 0.0]
+        goal = np.zeros(6)
+        if target is None:
+            goal[:5] = start[:5]  # joints frozen: only the jaw moves
+        else:
+            goal[:5] = np.radians([target[i] - JOINTS.offsets_deg[i] for i in range(1, 6)])
+        # the simulated jaw is a slide; full closure is sim_jaw_travel() metres
+        goal[5] = (
+            start[5] if gripper is None else float(np.clip(gripper, 0.0, 1.0)) * sim_jaw_travel()
         )
-        goal[:5] = np.radians(goal[:5])
-        if gripper is None:
-            goal[5] = start[5]
         for k in range(ramp):
             a = (k + 1) / ramp
             self.data.ctrl[:] = start + (goal - start) * a
@@ -183,8 +197,19 @@ class SerialRobot:
     def read_joints(self) -> dict[int, float]:
         return self.arm.pose()
 
-    def command(self, target: dict[int, float], gripper: float | None = None) -> dict[int, float]:
-        return self.arm.move(target, gripper=gripper)
+    def command(
+        self, target: dict[int, float] | None, gripper: float | None = None
+    ) -> dict[int, float]:
+        deg = None
+        if gripper is not None:
+            frac = float(np.clip(gripper, 0.0, 1.0))
+            deg = JOINTS.gripper_open_deg + frac * (
+                JOINTS.gripper_shut_deg - JOINTS.gripper_open_deg
+            )
+        if target is None:
+            self.arm.gripper(deg if deg is not None else self.arm.cmd.get(6, 20.0))
+            return self.arm.pose()
+        return self.arm.move(target, gripper=deg)
 
     def capture(self, device: str) -> np.ndarray | None:
         import cv2
@@ -262,6 +287,13 @@ def _make_arm(port: str, baud: int):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.Arm(port=port, baud=baud)
+
+
+def sim_jaw_travel() -> float:
+    """Jaw slide that corresponds to fully shut in the simulated model (metres)."""
+    from .params import GRASP
+
+    return GRASP.sim_jaw_travel_m
 
 
 def grasp_ready(io: RobotIO) -> bool:

@@ -133,9 +133,7 @@ def move_tip(io, delta_m: np.ndarray, *, gain: float = 1.6, max_deg: float = 2.0
     for k in range(5):
         if not free[k]:
             continue
-        target[k + 1] = pose[k + 1] + float(
-            np.clip(dqf[column] * gain, -max_deg, max_deg)
-        )
+        target[k + 1] = pose[k + 1] + float(np.clip(dqf[column] * gain, -max_deg, max_deg))
         column += 1
     io.command(target)
 
@@ -256,23 +254,58 @@ def align_jaws(io, offset_deg: float = 0.0) -> float:
     return float(best[1] + offset_deg)
 
 
+def descend_guarded(io, detect: Callable, target_xyz, say) -> bool:
+    """Lower onto the cube, stopping if the cube starts to move.
+
+    Watching the fingertip alone is not enough: the tip keeps following its command while
+    a finger's side face shoves the cube across the table (measured: 8 mm sideways, with
+    the wrist 19 deg off its starting angle). The cube's own pixel is the honest signal.
+    """
+    start = detect(io.capture_wrist())
+    ref = None if start is None else np.array(start["centre"], float)
+    for _ in range(80):
+        tip, _ = tip_and_axis(io.read_joints())
+        err = np.asarray(target_xyz, float) - tip
+        if np.linalg.norm(err) < 0.005:
+            return True
+        det = detect(io.capture_wrist())
+        if det is not None and ref is not None:
+            shifted = float(np.linalg.norm(np.array(det["centre"], float) - ref))
+            if shifted > GRASP.cube_shift_abort_px:
+                say(f"cube moved {shifted:.0f} px -- stopping the descent")
+                return False
+        move_tip(io, np.array([0.0, 0.0, float(np.clip(err[2], -0.010, 0.010))]))
+    tip, _ = tip_and_axis(io.read_joints())
+    return bool(np.linalg.norm(np.asarray(target_xyz, float) - tip) < 0.015)
+
+
 # ---------------------------------------------------------------- sequence
 def grasp(
-    io, detect: Callable, *, jaw_offset_deg: float = 0.0, log: Callable | None = None
+    io,
+    detect: Callable,
+    *,
+    jaw_offset_deg: float = 0.0,
+    log: Callable | None = None,
+    on_stage: Callable | None = None,
 ) -> dict:
     """Run the whole sequence and report what happened."""
     say = log or (lambda _m: None)
+    stage = on_stage or (lambda _s: None)
+    stage = on_stage or (lambda _s: None)
     pose = io.read_joints()
     tip, axis = tip_and_axis(pose)
     say(f"start TCP {np.round(tip * 1000, 0)} mm")
 
+    stage("CENTRE")
     target_px = _tool_axis_pixel(io, pose, axis)
     if not centre(io, detect, target_px, log=say):
         return {"ok": False, "reason": "centring failed"}
 
+    stage("ALIGN")
     j5 = align_jaws(io, jaw_offset_deg)
     say(f"jaws aligned at j5 = {j5:+.0f} deg")
 
+    stage("FIX")
     det = detect(io.capture_wrist())
     if det is None:
         return {"ok": False, "reason": "cube lost before back-projection"}
@@ -284,21 +317,23 @@ def grasp(
     # Descend straight down from where the centring left the tool axis. Moving laterally to
     # the back-projected estimate first was tried and made things worse: that estimate
     # carries an 8 mm silhouette bias, and steering to it put the fingers beside the cube.
+    stage("DESCEND")
     tip_now, _ = tip_and_axis(io.read_joints())
     target = np.array([tip_now[0], tip_now[1], GRASP.fingertip_grasp_z_m])
-    if not move_tip_to(io, target, max_iters=80):
+    if not descend_guarded(io, detect, target, say):
         return {"ok": False, "reason": "descent did not converge"}
     say("at grasp height")
 
     # Close with the arm frozen: re-command the pose it already holds, and change only the
     # gripper. Every extra tip command during the close nudges the cube.
-    hold = io.read_joints()
-    io.command(hold, gripper=JOINTS.gripper_shut_deg)
+    stage("CLOSE")
+    io.command(None, gripper=1.0)
     say("closed, arm held still")
 
-    lift = dict(hold)
+    stage("LIFT")
+    lift = dict(io.read_joints())
     lift[3] = lift[3] + 25.0
-    io.command(lift, gripper=JOINTS.gripper_shut_deg)
+    io.command(lift, gripper=1.0)
     return {"ok": True, "cube": est.tolist()}
 
 

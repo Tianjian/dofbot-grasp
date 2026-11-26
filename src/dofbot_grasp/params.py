@@ -84,6 +84,10 @@ class GraspParams:
     reidentify_every: int = 4
     # Table plane used when back-projecting a pixel to a 3-D point.
     table_z_m: float = 0.015
+    #: jaw slide at fully shut in the simulated model
+    sim_jaw_travel_m: float = 0.0159
+    #: stop descending once the cube has moved this far in the wrist frame
+    cube_shift_abort_px: float = 6.0
 
 
 @dataclass(frozen=True)
