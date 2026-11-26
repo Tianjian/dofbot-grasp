@@ -113,8 +113,8 @@ def main() -> int:
             model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
             data = mujoco.MjData(model)
             renderer = mujoco.Renderer(model, height=240, width=320)
-            io = SimRobot(model, data)   # must track the fresh model, or the controller
-                                          # commands an object nothing renders
+            io = SimRobot(model, data)  # must track the fresh model, or the controller
+            # commands an object nothing renders
             state["seed"] = f"seed{idx} {seed}"
             cube = model.jnt_qposadr[
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")
@@ -129,18 +129,39 @@ def main() -> int:
             mujoco.mj_forward(model, data)
             state["phase"] = "start"
             grab()
+            seen = {}
+
+            def on_stage(tag, _model=model, _data=data):
+                state["phase"] = tag
+                if tag == "CLOSE":
+                    cid = mujoco.mj_name2id(_model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+                    seen["close"] = _data.xpos[cid].copy()
+
             res = grasp(
                 io,
                 trial.make_detector(),
                 jaw_offset_deg=args.jaw_offset,
-                log=lambda m: state.update(phase=m.strip()[:28]),
+                on_stage=on_stage,
             )
-            state["phase"] = f"done ok={res.get('ok')} {res.get('reason', '')}"
+            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+            lifted = (float(data.xpos[cid][2]) - 0.015) * 1000
+            drift = (
+                float(np.linalg.norm(seen["close"][:2] - np.asarray(seed)[:2])) * 1000
+                if "close" in seen
+                else 0.0
+            )
+            # lifting is the success, per the user; drift is reported, not gated
+            res["ok"] = bool(res.get("ok") and lifted > 20)
+            res["drift_mm"] = round(drift, 1)
+            state["phase"] = f"done ok={res.get('ok')} lift={lifted:+.0f} drift={drift:.0f}mm"
             # hold the final state for a moment so the clip ends on the result instead of
             # cutting off mid-motion
             for _ in range(int(FPS * 1.2)):
                 grab()
-            print(f"  {state['seed']}: {res}")
+            print(
+                f"  {state['seed']}: ok={res.get('ok')} lift={lifted:+.1f} mm "
+                f"drift={res.get('drift_mm', 0):.0f} mm {res.get('reason', '')}"
+            )
     finally:
         mujoco.mj_step = real_step
         writer.release()
