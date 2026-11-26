@@ -65,7 +65,11 @@ found (see `docs/hardware-notes.md`).
 
 The sequence lives in `dofbot_grasp.controller` and runs unchanged against either backend
 (`docs/controller-architecture.md`). In simulation it grasps **4 of 4** cube positions,
-lifting 49-53 mm (`RESULTS.md`).
+lifting 20-22 mm, from measurements 2-5 mm off the truth (`RESULTS.md`).
+
+The sequence is measure-once-then-IK: the camera looks once from a pose the search has
+verified can see the cube, and everything after that is solved kinematically. On the arm the
+same order applies, and the observer camera should watch the approach and the lift.
 
 `scripts/run_ibvs_real.py` has the bus wrapper, the geometry and a `--dry-run` planner, but
 its motion phases are **not wired to the controller yet** -- the arm has never run this.
@@ -74,14 +78,15 @@ its motion phases are **not wired to the controller yet** -- the arm has never r
 
 Three behaviours that a first real run would otherwise have to discover:
 
-* the descent must correct all three axes. Height-only steps let the lateral error grow from
-  8 mm to over 15 mm in one descent, past the 10 mm the jaws allow;
+* the descent must be solved, not stepped. Numerical stepping reported success while leaving
+  the fingertip 24-44 mm short, which is how the jaws closed on air; IK puts it within a
+  millimetre;
 * the descent must stop on **mechanical** contact. Watching the cube's pixel instead gave
   both false stops (fingers entering the frame move the silhouette centroid) and false
   continues (the arm pressed the cube through the table);
-* the centring needs a way out of local minima. When the error stops improving it tries a
-  small joint-space grid; without it the loop sat 23 px short while a 1.8 px solution sat
-  ten degrees away.
+* centring the cube in the image is worse than leaving it where it is. Moving it to the
+  centre needs tens of degrees of joint motion, and the resulting pose can be 30 mm short of
+  reaching the grasp point. Measure from the pre-position instead.
 
 ## Range
 

@@ -100,12 +100,12 @@ Wrist-camera IBVS, no camera-calibration guesswork in the loop:
    (**1-2 mm** typical);
 4. **descend vertically** holding x/y to z = 10 mm, **close**, **lift**.
 
-| cube position | radius | lift | cube drift before the clamp |
-|---|---|---|---|
-| (20, 140) mm | 141 mm | **48.7 mm** | 7 mm |
-| (-60, 140) mm | 152 mm | **49.9 mm** | 2 mm |
-| (60, 140) mm | 152 mm | **52.2 mm** | 6 mm |
-| (40, 100) mm | 108 mm | **52.9 mm** | 58 mm |
+| cube position | radius | measured | error | lift | drift |
+|---|---|---|---|---|---|
+| (20, 140) mm | 141 mm | (22, 141) | **2.2 mm** | 20.0 mm | 3 mm |
+| (-60, 140) mm | 152 mm | (-58, 141) | **2.2 mm** | 20.7 mm | 8 mm |
+| (60, 140) mm | 152 mm | (64, 143) | 5.0 mm | 20.0 mm | 9 mm |
+| (100, 140) mm | 172 mm | (102, 138) | **2.8 mm** | 21.6 mm | 0 mm |
 
 **All four seeds grasp**, lifting the
 cube 49-53 mm clear. That field turned out to be **3.4x wider than the real camera's
@@ -114,9 +114,10 @@ scores 0 of 4 -- the rate above did not transfer. Retuning is in progress. Drift
 cube travelled before the jaws closed: three of the four are clean (2-7 mm), the close-in
 one is shoved along and then gripped, which by the agreed criterion still counts.
 
-The graspable range is narrower than the kinematics allow. Closer than about 100 mm radius
-the centring fails -- the fingers occlude the cube in a 90 deg field -- and at 172 mm the
-reach leaves the arm in a configuration whose wrist is already on its limit.
+The graspable range is narrower than the kinematics allow, and for a reason worth stating:
+the wrist camera sits 56 mm off the tool axis with a 26.6 deg field, so it sees the cube only
+from a narrow cone, and the poses that see it best tend to be ones from which the vertical
+grasp pose is out of reach. The trial's pre-positions are chosen to satisfy both at once.
 
 The graspable region was mapped by sweeping the kinematics with collision filtering:
 grasp points split evenly about y (49 % at y > 0) with the dense core at
@@ -129,6 +130,21 @@ x in [-80, 80] mm, y in [-140, -60] mm on the -y side and the mirror on the +y s
 | back-projection residual | 1-3 mm after the tracker rework; the 11 mm case was the colour centroid sitting off the cube on an oblique view |
 | near field | centring fails inside ~100 mm radius: the fingers occlude the cube |
 | sim-to-real transfer | **not yet run** -- the controller has never driven the arm |
+
+## What the sequence actually does
+
+1. **measure** — from a pre-position the search has already checked can see the cube, fit the
+   cube to the mask. One frame, one estimate, 2-5 mm.
+2. **align** — turn j5 so the jaws close parallel to a pair of the cube's faces, using the
+   yaw that fit produced.
+3. **approach** — IK to a point 35 mm above the cube's top, tool axis vertical.
+4. **descend** — IK straight down to the grasp height.
+5. **close, lift** — close with the joints frozen, then raise the elbow.
+
+Vision appears exactly once, at step 1. That is deliberate: an image loop cannot survive the
+approach here. Moving far enough to reach the cube takes it out of frame, so a loop that
+keeps asking for a fresh detection spends its time reporting "lost the cube". The
+measurement is worth more than the loop.
 
 ## Controller and the CI gate
 

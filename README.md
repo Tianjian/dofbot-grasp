@@ -11,11 +11,10 @@ and the servo bus are swapped.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-> **Demo** — [`sim/controller_sim.mp4`](sim/controller_sim.mp4): four cube positions,
-> one after another, wrist camera on the left and observer camera on the right. Each
-> frame carries the phase and, underneath, the fingertip and cube coordinates with the
-> distance between them -- the number that decides whether the jaws straddle the cube or
-> shove it. All four grasp, lifting **49-53 mm**.
+> **Demo** -- [`sim/controller_sim.mp4`](sim/controller_sim.mp4): four cube positions,
+> one after another, wrist camera on the left and observer camera on the right. The arm
+> measures the cube once from a pose that can see it, then drives the whole grasp by IK
+> with no further vision. All four grasp, lifting **20-22 mm**.
 >
 >
 > **All measured numbers, real and simulated, are in [`RESULTS.md`](RESULTS.md).**
@@ -24,15 +23,18 @@ and the servo bus are swapped.
 
 ## What it does
 
-1. **Perceive** — find a 30 mm cube in a 640×480 wrist-camera frame. A colour threshold
-   seeds SAM2, which returns the whole silhouette including the pale top face that a
-   saturation mask misses (15,898 px against the mask's 14,844 on the same frame). The
-   tracker costs 134-863 ms per frame on an RTX 2060.
+1. **Perceive** — find a 30 mm cube in a 640×480 wrist-camera frame, then fit the cube
+   itself to that silhouette: it rests on the table, so only its position and yaw are
+   unknown, and solving those three recovers the cube's *centre* rather than the centre of
+   whatever fragment a threshold caught (6.0 mm -> 3.5 mm). A colour threshold seeds SAM2,
+   which returns the whole silhouette including the pale top face a saturation mask misses;
+   the tracker costs 134-863 ms per frame on an RTX 2060.
 2. **Reach** — solve the 5-DOF arm's inverse kinematics with damped least squares
    against a URDF-derived chain, then map joint radians to servo degrees.
-3. **Grasp** — run a seven-phase state machine (`home → search → align → approach →
-   grasp → lift → verify`) and emit joint targets to six servos over a
-   `115200` baud serial link.
+3. **Grasp** — measure the cube once from a pose that can see it, square the jaws to its
+   yaw, then drive the pre-grasp point and the grasp height by IK alone: the field of view
+   is too narrow to keep the cube in frame while moving, so the vision budget is spent
+   where it is worth the most.
 
 Perception optionally uses a GPU through SAM2; the servoing and grasp logic are
 ordinary Python. No cloud call, no ROS.
@@ -50,8 +52,9 @@ ordinary Python. No cloud call, no ROS.
 | Cameras — intrinsics | wrist cx 269.8 (50 px off centre), observer RMS 0.65 px |
 | Cameras — mount | wrist registered to the camera modelled in `link5.STL`; observer matched to the real cell including the black backdrop |
 | Simulation ↔ arm | forward kinematics **0.0 mm** over seven poses; static error 1.53 deg vs ~1.5; settling 1.6 s vs 1.5-2.0 |
-| Simulation — grasp | **4 of 4 cube positions grasped**, lifting 49-53 mm |
+| Simulation — grasp | **4 of 4 cube positions grasped**, lifting 20-22 mm |
 | CI gate | grasp rate is a **blocking** check at 0.75, currently 1.00 |
+| Controller | 229 lines, eleven functions, all live |
 | Simulation → real | **not yet run** |
 
 Details: [`RESULTS.md`](RESULTS.md) for the numbers,
