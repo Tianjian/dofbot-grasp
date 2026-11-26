@@ -71,7 +71,7 @@ def make_detector(prefer_gpu: bool = False):
     return detect
 
 
-def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
+def run(seed, *, verbose: bool = False, use_gpu: bool = False, jaw_offset: float = 0.0) -> dict:
     import mujoco
 
     from dofbot_grasp.controller import grasp
@@ -91,7 +91,12 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
     mujoco.mj_forward(model, data)
 
     before = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
-    result = grasp(io, make_detector(prefer_gpu=use_gpu), log=print if verbose else None)
+    result = grasp(
+        io,
+        make_detector(prefer_gpu=use_gpu),
+        jaw_offset_deg=jaw_offset,
+        log=print if verbose else None,
+    )
     after = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
     lift = (after - before) * 1000
     result.update({"seed": seed, "lift_mm": lift, "ok": bool(result.get("ok") and lift > 20)})
@@ -103,10 +108,19 @@ def main() -> int:
     ap.add_argument("--min-rate", type=float, default=0.75)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--detector", choices=["colour", "sam2"], default="colour")
+    ap.add_argument(
+        "--jaw-offset",
+        type=float,
+        default=0.0,
+        help="extra quarter turn of the gripper base (degrees)",
+    )
     ap.add_argument("--json", default=None, help="write the per-seed results here")
     args = ap.parse_args()
 
-    rows = [run(s, verbose=args.verbose, use_gpu=args.detector == "sam2") for s in SEEDS]
+    rows = [
+        run(s, verbose=args.verbose, use_gpu=args.detector == "sam2", jaw_offset=args.jaw_offset)
+        for s in SEEDS
+    ]
     wins = sum(r["ok"] for r in rows)
     rate = wins / len(rows)
     for r in rows:

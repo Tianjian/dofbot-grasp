@@ -148,7 +148,10 @@ def move_tip_to(io, target_xyz, *, max_iters: int = 140, tol: float = 0.005) -> 
         err = target - tip
         if np.linalg.norm(err) < tol:
             return True
-        move_tip(io, np.clip(err, -0.010, 0.010))
+        # Descend with a pure height command. Feeding the lateral error as well let the
+        # solver spend its joint budget correcting x/y, and it stalled with the elbow on
+        # its limit; the centring stage is what keeps the tool axis on the cube.
+        move_tip(io, np.array([0.0, 0.0, float(np.clip(err[2], -0.010, 0.010))]))
     tip, _ = tip_and_axis(io.read_joints())
     return bool(np.linalg.norm(target - tip) < 0.015)
 
@@ -210,8 +213,13 @@ def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarr
     return np.column_stack(cols)
 
 
-def align_jaws(io) -> float:
-    """Turn j5 until the jaw axis is parallel to a world axis; returns the angle used."""
+def align_jaws(io, offset_deg: float = 0.0) -> float:
+    """Turn j5 until the jaw axis is parallel to a world axis.
+
+    ``offset_deg`` rotates the gripper base a further quarter turn, which makes the jaws
+    close on the other pair of faces. The fingers are 21.3 mm wide and 47.9 mm long, so
+    which pair they straddle changes the clearance on the way down.
+    """
     pose = io.read_joints()
     best = None
     for deg in np.linspace(-135.0, 135.0, 181):
@@ -229,13 +237,15 @@ def align_jaws(io) -> float:
     if best is None:
         return 0.0
     target = dict(pose)
-    target[5] = JOINTS.offsets_deg[5] + best[1]
+    target[5] = JOINTS.offsets_deg[5] + best[1] + offset_deg
     io.command(target)
-    return float(best[1])
+    return float(best[1] + offset_deg)
 
 
 # ---------------------------------------------------------------- sequence
-def grasp(io, detect: Callable, *, log: Callable | None = None) -> dict:
+def grasp(
+    io, detect: Callable, *, jaw_offset_deg: float = 0.0, log: Callable | None = None
+) -> dict:
     """Run the whole sequence and report what happened."""
     say = log or (lambda _m: None)
     pose = io.read_joints()
@@ -246,7 +256,7 @@ def grasp(io, detect: Callable, *, log: Callable | None = None) -> dict:
     if not centre(io, detect, target_px, log=say):
         return {"ok": False, "reason": "centring failed"}
 
-    j5 = align_jaws(io)
+    j5 = align_jaws(io, jaw_offset_deg)
     say(f"jaws aligned at j5 = {j5:+.0f} deg")
 
     det = detect(io.capture_wrist())
