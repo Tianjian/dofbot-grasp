@@ -33,8 +33,22 @@ So the controller consumes only the tracker's centroid and area
 
 ## Place the cube inside the graspable band
 
-Sampling the kinematics for fingertip points near the table with a near-vertical tool
-puts the graspable band at **y in [-200, -20] mm, x in [-200, +160] mm**. The original
+A kinematic-only sample is not enough: it counts configurations where the arm passes
+through the table. Filtering by actual arm-vs-table contacts gives the true region.
+
+```
+   x \ y     -220  -180  -139   -99   -59   -19
+  -160          .     #     @
+   -79         .     *     @     @     @
+     0         .     @     @     @     @     *
+    80               *     @     @     @
+   160                     .     #     @
+```
+
+The dense collision-free core is **x in [-80, 80] mm, y in [-140, -60] mm**. Seeds
+outside it read as "an ungraspable half of the table" -- and y = -170 mm turned out to
+be right on the edge: a fingertip command to (-20, -170, 12) stalls at (-17, -148, 1)
+with j4 pinned at its 90 deg limit and the contact count climbing to 7. The original
 seeds sat at y = -250 to -285 mm, i.e. outside it, which is why they behaved as
 "impossible half of the table" rather than as a controller problem. A pose aimed at the
 band's centre (q = [0, -5, 80, 90] deg) keeps a cube anywhere in the band inside the

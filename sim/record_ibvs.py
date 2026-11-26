@@ -17,7 +17,7 @@ sys.path.insert(0, "/home/toby/Desktop/dofbot-grasp/sim")
 import ibvs_sim as S  # noqa: E402
 
 OUT = "/home/toby/Desktop/dofbot-grasp/sim/ibvs_sim.mp4"
-SEED = (-0.020, -0.170)   # inside the graspable band (y in [-200,-20] mm)
+SEED = (-0.020, -0.140)   # collision-free graspable core
 W, H = 480, 360
 
 

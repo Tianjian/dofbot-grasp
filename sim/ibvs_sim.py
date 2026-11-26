@@ -363,9 +363,10 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
 if __name__ == "__main__":
     import sys
 
-    # Kinematic sampling puts the graspable band at y in [-200, -20] mm; the old
-    # seeds at y < -230 were outside it, which is why they read as "ungraspable".
-    seeds = [(-0.060, -0.140), (0.020, -0.120), (-0.020, -0.170), (0.060, -0.100)]
+    # Collision-filtered sampling (arm vs table, fingertip at grasp height with a
+    # near-vertical tool) puts the dense graspable core at x in [-80, 80] mm and
+    # y in [-140, -60] mm. Seeds outside that read as "an ungraspable half".
+    seeds = [(-0.060, -0.120), (0.020, -0.100), (-0.020, -0.140), (0.060, -0.120)]
     wins = 0
     for sx, sy in seeds:
         res = run_once((sx, sy), verbose="-v" in sys.argv)
