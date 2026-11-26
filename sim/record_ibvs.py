@@ -1,8 +1,8 @@
-"""Record the IBVS grasp run: wrist view (the feedback) beside the observer view.
+"""Record the IBVS grasp run frame by frame: wrist view beside the observer view.
 
-The frames come from ``ibvs_sim.run_once`` itself via its ``shot`` callback, so the
-recording shows exactly the pipeline that is measured -- an earlier version duplicated
-the phases and drifted from it.
+The pipeline is driven through ``ibvs_sim.run_once`` (so the recording cannot drift from
+the code being measured). Frames are taken by wrapping ``mujoco.mj_step``: capturing only
+at phase boundaries gave ten frames, far too few to see what the arm actually does.
 """
 
 from __future__ import annotations
@@ -20,54 +20,60 @@ import ibvs_sim as S  # noqa: E402
 OUT = "/home/toby/Desktop/dofbot-grasp/sim/ibvs_sim.mp4"
 SEED = (0.020, 0.140)
 W, H = 480, 360
+EVERY = 200         # sim steps per captured frame (dt = 2 ms -> 0.4 s)
+FPS = 10.0
 
 
 def label(img, text):
     out = img.copy()
-    cv2.rectangle(out, (0, 0), (out.shape[1], 26), (0, 0, 0), -1)
-    cv2.putText(out, text, (8, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
+    cv2.rectangle(out, (0, 0), (out.shape[1], 24), (0, 0, 0), -1)
+    cv2.putText(out, text, (8, 17), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
     return out
 
 
 def main():
-    writer = cv2.VideoWriter(OUT, cv2.VideoWriter_fourcc(*"mp4v"), 6.0, (W * 2, H))
-    # one shared model/data pair, driven through the pipeline
+    writer = cv2.VideoWriter(OUT, cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W * 2, H))
     model = mujoco.MjModel.from_xml_path("/home/toby/Desktop/dofbot-grasp/sim/dofbot_se.xml")
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=S.IMG_H, width=S.IMG_W)
+    state = {"n": 0, "phase": "start"}
+
+    def grab():
+        views = []
+        for cam in ("wrist_cam", "overview"):
+            renderer.update_scene(data, camera=cam)
+            img = cv2.resize(cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR), (W, H))
+            views.append(img)
+        t = data.time
+        a = label(views[0], f"wrist  {state['phase']}")
+        b = label(views[1], f"observer  t={t:.1f}s")
+        writer.write(np.hstack([a, b]))
+
+    real_step = mujoco.mj_step
+
+    def step_with_capture(m, d, nstep=1):
+        real_step(m, d, nstep)
+        state["n"] += 1
+        if state["n"] % EVERY == 0:
+            grab()
+
+    # run_once builds its own model/data/renderer; hand it ours
+    S.mujoco.MjModel.from_xml_path = lambda _p: model
+    S.mujoco.MjData = lambda _m: data
+    S.mujoco.Renderer = lambda _m, height=S.IMG_H, width=S.IMG_W: renderer
+    S.mujoco.mj_step = step_with_capture
 
     def shot(tag):
-        for cam, half in (("wrist_cam", "wrist"), ("overview", "observer")):
-            renderer.update_scene(data, camera=cam)
-            img = cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR)
-            img = cv2.resize(img, (W, H))
-            img = label(img, f"{half}: {tag}")
-            if cam == "wrist_cam":
-                wrist = img
-            else:
-                observer = img
-        for _ in range(2):
-            writer.write(np.hstack([wrist, observer]))
+        state["phase"] = tag
+        grab()
 
-    import types
-    mod = types.SimpleNamespace()
-    mod.model, mod.data, mod.renderer = model, data, renderer
-    # monkey-patch the module-level objects run_once builds internally
-    orig = S.mujoco.MjModel.from_xml_path
-
-    def patched(_path):
-        return model
-
-    S.mujoco.MjModel.from_xml_path = patched
-    S.mujoco.MjData = lambda _m: data
-    S.mujoco.Renderer = lambda _m, height=240, width=320: renderer
     try:
         res = S.run_once(SEED, verbose=True, shot=shot)
     finally:
-        S.mujoco.MjModel.from_xml_path = orig
+        S.mujoco.mj_step = real_step
     writer.release()
     print("result:", res.get("ok"), res.get("lift_mm"), res.get("reason", ""))
-    print("wrote", OUT)
+    print(f"wrote {OUT}  ({state['n']} sim steps)")
 
 
 if __name__ == "__main__":
