@@ -32,8 +32,8 @@ MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
 TIP_STOP_Z = 0.010  # fingertip below the cube's mid-height (15 mm) before closing
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
-GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm
-GRIP_CLOSE = 0.14  # 8 deg swing -> inner faces +-13.7 mm, 1.3 mm interference on a 30 mm cube
+GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm (parallel slides)
+GRIP_CLOSE = 0.0068  # 6.8 mm slide each -> inner faces +-13.7 mm, 1.3 mm interference
 
 # ---- sim2real joint convention ------------------------------------------------
 # Real bus servos report u in [0, 180] (j1..j4, j6) and [0, 270] (j5). The vendor
@@ -48,7 +48,7 @@ SERVO_OFFSET_DEG = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0, 5: 135.0}
 GRIP_SERVO_OPEN = 20.0
 GRIP_SERVO_CLOSED = 140.0
 GRIP_JAW_AT_OPEN = 0.0
-GRIP_JAW_AT_CLOSED = 0.14
+GRIP_JAW_AT_CLOSED = 0.0068
 
 
 def servo_to_joint(servo_deg: dict[int, float]) -> np.ndarray:
@@ -217,6 +217,35 @@ def move_tip_to(model, data, q, target_xyz, max_iters=60):
     return np.linalg.norm(np.asarray(target_xyz) - _tip_and_axis(model, data)[0]) < 0.020
 
 
+def centre_cube(model, data, renderer, q, tgt_u, tgt_v, max_iters=25, verbose=False):
+    """Drive the cube's centroid onto the tool-axis pixel.
+
+    The Jacobian is re-identified every iteration: the camera sits off the tool axis, so
+    a Jacobian measured at one pose has the wrong gains (and sometimes the wrong signs)
+    at another.
+    """
+    J = identify_jacobian(model, data, renderer, q, probe_deg=3.0)
+    if J is None:
+        return False, None
+    for it in range(max_iters):
+        if it:
+            Jn = identify_jacobian(model, data, renderer, q, probe_deg=3.0)
+            if Jn is not None:
+                J = Jn
+        det = detect_cube(render(model, data, renderer))
+        if det is None:
+            return False, None
+        e = np.array([det["centre"][0] - tgt_u, det["centre"][1] - tgt_v])
+        if verbose:
+            print(f"  centre it{it}: err=({e[0]:+.1f},{e[1]:+.1f})")
+        if abs(e[0]) < DEADBAND_PX and abs(e[1]) < DEADBAND_PX:
+            return True, det
+        dq = np.clip(-LAMBDA * np.linalg.pinv(J) @ e, -MAX_STEP_DEG, MAX_STEP_DEG)
+        q[:3] += np.radians(dq)
+        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
+    return False, None
+
+
 def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=110):
     """Lower the tip to ``z_target`` in FK closed loop.
 
@@ -266,6 +295,30 @@ def descend_step(model, data, q, dz=-0.004, damping=None):
     return True
 
 
+def unproject_to_plane(model, data, u, v, z_plane=0.015, cam="wrist_cam"):
+    """Pixel -> world point on the horizontal plane z = z_plane.
+
+    Fair game on the real robot too: the intrinsics are calibrated and the camera's pose
+    comes from FK plus the registered mount. It removes the need to keep the cube in view
+    while the arm moves, which a 90 deg field makes impractical.
+    """
+    cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam)
+    cam_pos = data.cam_xpos[cid].copy()
+    cam_mat = data.cam_xmat[cid].reshape(3, 3).copy()
+    fovy = np.radians(model.cam_fovy[cid])
+    f = (IMG_H / 2.0) / np.tan(fovy / 2.0)
+    x_c = (u - IMG_W / 2.0) / f
+    y_c = -(v - IMG_H / 2.0) / f
+    ray_cam = np.array([x_c, y_c, -1.0])
+    ray = cam_mat @ ray_cam
+    if abs(ray[2]) < 1e-6:
+        return None
+    t = (z_plane - cam_pos[2]) / ray[2]
+    if t <= 0:
+        return None
+    return cam_pos + t * ray
+
+
 def tool_axis_pixel(model, data) -> tuple[float, float]:
     """Pixel where the *tool axis* passes at the cube's plane, not the camera axis.
 
@@ -313,7 +366,7 @@ def servos(model, data, ctrl, tol=0.004, max_steps=3000, move_time=MOVE_TIME_S):
     return
 
 
-def run_once(seed_cube_xy, max_iters=40, verbose=False):
+def run_once(seed_cube_xy, max_iters=40, verbose=False, shot=None):
     model = mujoco.MjModel.from_xml_path(__file__.rsplit("/", 1)[0] + "/dofbot_se.xml")
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, height=IMG_H, width=IMG_W)
@@ -341,35 +394,14 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
         return {"ok": False, "reason": "cube not visible at start", "iters": 0}
     tgt_u, tgt_v = tool_axis_pixel(model, data)  # captured once, never updated
     trace = []
-    J = identify_jacobian(model, data, renderer, q, probe_deg=4.0)
-    if J is None:
-        return {"ok": False, "reason": "jacobian identification failed"}
-    for it in range(max_iters):
-        if it and it % 4 == 0:  # refresh the Jacobian periodically
-            Jn = identify_jacobian(model, data, renderer, q, probe_deg=4.0)
-            if Jn is not None:
-                J = Jn
-        img = render(model, data, renderer)
-        det = detect_cube(img)
-        if det is None:
-            return {"ok": False, "reason": "lost the cube while centring", "iters": it}
-        e = np.array([det["centre"][0] - tgt_u, det["centre"][1] - tgt_v])
-        trace.append((det["centre"][0], det["centre"][1], tgt_u, tgt_v))
-        if verbose:
-            print(
-                f"  it{it:2d} cube=({det['centre'][0]:6.1f},{det['centre'][1]:6.1f}) "
-                f"target=({tgt_u:6.1f},{tgt_v:6.1f}) err=({e[0]:+6.1f},{e[1]:+6.1f})"
-            )
-        if abs(e[0]) < DEADBAND_PX and abs(e[1]) < DEADBAND_PX:
-            break
-        dq = -LAMBDA * np.linalg.pinv(J) @ e
-        dq = np.clip(dq, -MAX_STEP_DEG, MAX_STEP_DEG)
-        q[0] += np.radians(dq[0])
-        q[1] += np.radians(dq[1])
-        q[2] += np.radians(dq[2])
-        servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
-    else:
-        return {"ok": False, "reason": "centre did not converge", "trace": trace}
+    if shot:
+        shot("READY")
+    ok_centre, det_centred = centre_cube(model, data, renderer, q, tgt_u, tgt_v,
+                                         verbose=verbose)
+    if shot:
+        shot("CENTRED")
+    if not ok_centre:
+        return {"ok": False, "reason": "lost the cube while centring"}
 
     # ---- phase 1b: turn the gripper base so the jaws close on two faces ----
     j5 = align_jaw_axis(model, data, q)
@@ -381,25 +413,34 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     # Centring puts the cube on the *camera's* optical axis, but the camera sits off the
     # tool axis, so the two are parallel lines separated by the mount offset. Moving the
     # arm by that offset puts the tool axis -- not the camera axis -- on the cube.
-    l4 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link4")
-    l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
-    m_local = np.array([-0.05840, -0.0576, -0.0007]) - np.array([-0.07385, -0.001, 0.0])
-    m_world = data.xmat[l4].reshape(3, 3) @ m_local
-    tip_now, axis_now = _tip_and_axis(model, data)
-    m_perp = m_world - np.dot(m_world, axis_now) * axis_now
-    if not move_tip_to(model, data, q, tip_now + m_perp, max_iters=40):
-        return {"ok": False, "reason": "parallax compensation did not converge"}
+    # Centring leaves the cube on the *camera* axis; the tool axis is a parallel line one
+    # mount-offset away. Rather than sliding by that offset (which loses the cube out of a
+    # 90 deg field before the next look), back-project the cube's pixel onto the table
+    # plane: with calibrated intrinsics and the registered mount that is a direct 3-D
+    # fix, and it needs no further view of the cube.
+    det = detect_cube(render(model, data, renderer))
+    if det is None:
+        return {"ok": False, "reason": "lost the cube before back-projection"}
+    cube_est = unproject_to_plane(model, data, det["centre"][0], det["centre"][1], 0.015)
+    if cube_est is None:
+        return {"ok": False, "reason": "back-projection failed"}
     if verbose:
-        print(f"  parallax compensation: |m_perp| = {np.linalg.norm(m_perp)*1000:.1f} mm")
+        print(f"  back-projected cube: ({cube_est[0]*1000:.0f}, {cube_est[1]*1000:.0f}) mm")
+    if shot:
+        shot(f"BACKPROJECT_{cube_est[0]*1000:.0f}_{cube_est[1]*1000:.0f}")
 
     # ---- phase 2: descend straight down, holding x/y ------------------------
     # Descending along the tool axis is not vertical: the arm reaches out as it lowers
     # and the tip drifts about 15 mm, which is enough for the jaws to land on the cube
     # instead of around it. So the descent holds x/y and moves z only.
     above, _ = _tip_and_axis(model, data)
-    grasph = np.array([above[0], above[1], 0.010])
+    grasph = np.array([cube_est[0], cube_est[1], 0.010])
+    if shot:
+        shot("DESCEND_START")
     if not move_tip_to(model, data, q, grasph, max_iters=80):
         return {"ok": False, "reason": "vertical descent did not converge"}
+    if shot:
+        shot("AT_GRASP_HEIGHT")
 
     # ---- phase 3: close and lift ------------------------------------------
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]))
@@ -408,12 +449,7 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     q[2] += np.radians(25.0)  # lift
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]), max_steps=1500)
     z_after = float(data.xpos[cube_body][2])
-    return {
-        "ok": z_after > z_before + 0.02,
-        "lift_mm": (z_after - z_before) * 1000,
-        "iters": it,
-        "trace": trace,
-    }
+    return {"ok": z_after > z_before + 0.02, "lift_mm": (z_after - z_before) * 1000}
 
 
 if __name__ == "__main__":
