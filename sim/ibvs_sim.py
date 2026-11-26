@@ -27,10 +27,10 @@ MOUNT_BACK = 0.023  # camera behind the tool axis (caliper measurement)
 MOUNT_LAT = 0.050  # camera lateral offset (caliper measurement)
 
 IMG_W, IMG_H = 320, 240
-DEADBAND_PX = 6.0
+DEADBAND_PX = 3.0   # 6 px was ~6.7 mm laterally, more than the 5.45 mm jaw clearance
 MAX_STEP_DEG = 2.0
 LAMBDA = 0.8
-TIP_STOP_Z = 0.016  # reachable minimum for this pose (12.5 mm) plus margin
+TIP_STOP_Z = 0.010  # fingertip below the cube's mid-height (15 mm) before closing
 FINGERTIP_Z = 0.0875  # link5 -> fingertip, from link5.STL (jaws end at z = 87.5 mm)
 GRIP_OPEN = 0.0    # j6 = 0 -> jaws apart, inner faces at +-20.45 mm
 GRIP_CLOSE = 0.14  # 8 deg swing -> inner faces +-13.7 mm, 1.3 mm interference on a 30 mm cube

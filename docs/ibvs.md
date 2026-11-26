@@ -88,6 +88,20 @@ With the revolute jaws the descent now stops at 17 mm because a **fifth contact*
 appears -- the jaws meeting the cube -- so the approach needs a little more lateral
 clearance before the final descent.
 
+## The remaining aim error is a parallax, not a tolerance
+
+Tracing the descent with the revolute jaws shows the tip arriving at
+**(-28, -221) mm** while the cube sits at **(-30, -250) mm**: a 29 mm shortfall, with
+the centring error only 1.1 px. The cause is the "capture the target pixel once"
+compromise: that pixel marks where the *original* pose's tool axis projected, and after
+the arm travels the current axis points elsewhere. Matching the cube to a stale pixel
+is not the same as putting the cube on the live tool axis.
+
+The fix is to recompute the target each iteration **and compensate for its motion**:
+the target moves with q, so a naive update loops (that produced the +265 px runaway).
+Track the target as a function of q in the same Jacobian, or servo in 3D on the
+plane -- the cube's height is known, so the alignment is two-dimensional.
+
 The **close still does not retain the cube**: the video shows the jaws arriving at the
 cube, but the cube stays on the table during the lift. Jaw interference is 1.35 mm per
 side, so the next suspects are contact friction and the moment the jaws meet the cube's
