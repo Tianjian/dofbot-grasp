@@ -45,7 +45,14 @@ through the table. Filtering by actual arm-vs-table contacts gives the true regi
    160                     .     #     @
 ```
 
-The dense collision-free core is **x in [-80, 80] mm, y in [-140, -60] mm**. Seeds
+A **full-range** sweep (q2..q4 all across +-90 deg) shows the region is symmetric about
+y: 49 % of the collision-free grasp points sit at **y > 0**, with the densest cells at
+(20,140), (60,140), (-60,140) and (100,140) mm. That +y side is the one the real arm
+works on, so it is the side the simulation should use.
+
+An earlier sweep restricted q3/q4 to a mostly-positive window and therefore reported
+only the -y lobe -- which is what made the cube look permanently "in the wrong half".
+The remaining dense core on the -y side is x in [-80, 80] mm, y in [-140, -60] mm. Seeds
 outside it read as "an ungraspable half of the table" -- and y = -170 mm turned out to
 be right on the edge: a fingertip command to (-20, -170, 12) stalls at (-17, -148, 1)
 with j4 pinned at its 90 deg limit and the contact count climbing to 7. The original

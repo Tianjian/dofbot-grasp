@@ -272,8 +272,8 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
 
     data.qpos[cube_adr : cube_adr + 2] = seed_cube_xy
     data.qpos[cube_adr + 2] = CUBE_Z
-    # aimed at the middle of the graspable band so the seeds stay in view
-    q = np.array([0.0, -0.0873, 1.3963, 1.5708, 1.0])
+    # aimed at the +y grasp region, the same side the real arm works on
+    q = np.array([-0.1745, 0.1396, -1.5359, -1.3265, 1.0])
     for j, v in zip(("joint1", "joint2", "joint3", "joint4", "joint5"), q, strict=True):
         data.qpos[jadr[j]] = v
     ctrl = np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN])
@@ -363,10 +363,11 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
 if __name__ == "__main__":
     import sys
 
-    # Collision-filtered sampling (arm vs table, fingertip at grasp height with a
-    # near-vertical tool) puts the dense graspable core at x in [-80, 80] mm and
-    # y in [-140, -60] mm. Seeds outside that read as "an ungraspable half".
-    seeds = [(-0.060, -0.120), (0.020, -0.100), (-0.020, -0.140), (0.060, -0.120)]
+    # A collision-filtered sweep over the FULL joint range shows the grasp region is
+    # symmetric: 49 % of the reachable points sit at y > 0, which is the side the real
+    # arm actually works on. Sampling q3/q4 over a positive-only window (an earlier
+    # mistake) hid the whole +y lobe.
+    seeds = [(0.020, 0.140), (-0.060, 0.140), (0.060, 0.140), (0.100, 0.140)]
     wins = 0
     for sx, sy in seeds:
         res = run_once((sx, sy), verbose="-v" in sys.argv)
