@@ -342,6 +342,27 @@ closed on air. Grasping a 30 mm cube needs the fingertips at roughly 8 mm, i.e.
 Gripper travel is also narrower than the servo range: commanded 175 deg it stops at
 140 deg open, and closes to about 12 deg. Treat the usable opening as ~140 deg.
 
+## Two timing rules that silently corrupt data
+
+Both of these produced wrong results before they were found, and both are invisible
+in the numbers -- the arm simply does not move, or moves less than commanded.
+
+**1. Never read the bus inside the motion-start window.** ``build_write6_frame``
+starts a timed move; sending a *read* frame within roughly 0.3 s of it cancels the
+move. The arm stays put, ``settle()`` sees no change, and the code happily records
+the previous pose as if the move had happened. Leave >= 0.5 s of quiet after every
+``write6`` before the first read.
+
+**2. "Settled" means settled.** At the poses used here (shoulder 80-100 deg, arm
+extended) a 1.2 s timed move takes 1.5-2.0 s to actually stop. Waiting a fixed 1.6 s
+and then sampling catches the arm mid-motion, so the recorded joint angles -- and
+therefore every FK result derived from them -- are wrong. Poll the read-back until
+successive samples differ by < 0.35 deg.
+
+Symptom to watch for: commands that differ substantially produce identical
+read-backs and identical image statistics, or consecutive samples jump by several
+degrees while nothing is moving.
+
 ## Localising the cube with the wrist camera alone
 
 The cube is known (30 mm, on a flat desk) and the intrinsics are known, so its
