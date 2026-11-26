@@ -74,7 +74,7 @@ class GraspParams:
     # is better than above: at 20-40 mm the jaws only touch the top face and lift nothing.
     fingertip_grasp_z_m: float = 0.010
     # Image-space servoing.
-    deadband_px: float = 3.0
+    deadband_px: float = 8.0   # ~6 mm at grasp range; the jaws tolerate ~10 mm
     max_step_deg: float = 2.0
     gain: float = 0.5
     # Per-step joint steps used to identify the image Jacobian.
@@ -85,7 +85,10 @@ class GraspParams:
     # Table plane used when back-projecting a pixel to a 3-D point.
     table_z_m: float = 0.015
     #: jaw slide at fully shut in the simulated model
-    sim_jaw_travel_m: float = 0.0113   # 25 mm inner face -> 13.7 mm on a 30 mm cube
+    sim_jaw_travel_m: float = 0.0113  # 25 mm inner face -> 13.7 mm on a 30 mm cube
+    #: quarter turn of the gripper base; the fingers then descend either side of the
+    #: cube instead of sweeping through its top, which is what the wrist camera sees
+    default_jaw_offset_deg: float = 90.0
     #: stop descending once the cube has moved this far in the wrist frame
     cube_shift_abort_px: float = 14.0
 

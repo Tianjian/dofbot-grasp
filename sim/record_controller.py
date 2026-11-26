@@ -26,7 +26,7 @@ from dofbot_grasp.controller import grasp  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
-FPS = 30.0   # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)
+FPS = 30.0  # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)
 W, H = 480, 360
 
 

@@ -66,7 +66,8 @@ def make_detector(prefer_gpu: bool = False):
         det = sim.detect_cube(frame)
         if det is None:
             return None
-        return {"centre": tuple(det["centre"])}
+        x, y, w, h = det["bbox"]
+        return {"centre": tuple(det["centre"]), "area": float(w * h)}
 
     return detect
 

@@ -255,25 +255,38 @@ def align_jaws(io, offset_deg: float = 0.0) -> float:
 
 
 def descend_guarded(io, detect: Callable, target_xyz, say) -> bool:
-    """Lower onto the cube, stopping if the cube starts to move.
+    """Lower onto the cube, stopping the moment the fingertip stops following.
 
-    Watching the fingertip alone is not enough: the tip keeps following its command while
-    a finger's side face shoves the cube across the table (measured: 8 mm sideways, with
-    the wrist 19 deg off its starting angle). The cube's own pixel is the honest signal.
+    The reliable contact signal is mechanical: the tip stops descending while the command
+    keeps asking for it. Watching the cube's pixel instead gave both false positives
+    (fingers entering the view shift the silhouette centroid) and false negatives (the
+    descent continued and pressed the cube through the table). The camera is kept as a
+    log, not as the stop condition.
     """
-    start = detect(io.capture_wrist())
-    ref = None if start is None else np.array(start["centre"], float)
+    ref = detect(io.capture_wrist())
+    prev_z = None
+    stalled = 0
     for _ in range(80):
         tip, _ = tip_and_axis(io.read_joints())
         err = np.asarray(target_xyz, float) - tip
         if np.linalg.norm(err) < 0.005:
             return True
+        if prev_z is not None:
+            if abs(tip[2] - prev_z) < 0.0004:
+                stalled += 1
+                if stalled >= 2:
+                    say("fingertip stopped descending -- contact")
+                    return True
+            else:
+                stalled = 0
+        prev_z = float(tip[2])
         det = detect(io.capture_wrist())
         if det is not None and ref is not None:
-            shifted = float(np.linalg.norm(np.array(det["centre"], float) - ref))
+            shifted = float(
+                np.linalg.norm(np.array(det["centre"], float) - np.array(ref["centre"], float))
+            )
             if shifted > GRASP.cube_shift_abort_px:
-                say(f"cube moved {shifted:.0f} px -- stopping the descent")
-                return False
+                say(f"note: cube centroid {shifted:.0f} px from the start of the descent")
         move_tip(io, np.array([0.0, 0.0, float(np.clip(err[2], -0.010, 0.010))]))
     tip, _ = tip_and_axis(io.read_joints())
     return bool(np.linalg.norm(np.asarray(target_xyz, float) - tip) < 0.015)
@@ -284,7 +297,7 @@ def grasp(
     io,
     detect: Callable,
     *,
-    jaw_offset_deg: float = 0.0,
+    jaw_offset_deg: float = 90.0,
     log: Callable | None = None,
     on_stage: Callable | None = None,
 ) -> dict:
