@@ -176,12 +176,16 @@ def _tip_and_axis(model, data):
     return data.xpos[l5].copy() + FINGERTIP_Z * axis, axis
 
 
-def move_tip(model, data, q, delta, gain=1.6, max_deg=2.0):
-    """Translate the tool tip by ``delta`` (metres, world) with a damped 3x3 solve."""
+def move_tip(model, data, q, delta, gain=1.6, max_deg=2.0, n_joints=4):
+    """Translate the tool tip by ``delta`` (metres, world).
+
+    Uses ``n_joints`` columns (j1..j4 by default). Three was not enough: a 58 mm lateral
+    move needs the wrist to contribute, and a square Jacobian then cannot solve it.
+    """
     tip0, _ = _tip_and_axis(model, data)
-    J = np.zeros((3, 3))
+    J = np.zeros((3, n_joints))
     eps = np.radians(1.0)
-    for k in range(3):
+    for k in range(n_joints):
         qt = q.copy()
         qt[k] += eps
         for j, v in zip(range(5), qt, strict=True):
@@ -195,7 +199,7 @@ def move_tip(model, data, q, delta, gain=1.6, max_deg=2.0):
     mujoco.mj_forward(model, data)
     lam = 1e-2 * float(np.trace(J @ J.T)) / 3.0
     dq = J.T @ np.linalg.solve(J @ J.T + lam * np.eye(3), np.asarray(delta, float))
-    q[:3] += np.radians(np.clip(dq * gain, -max_deg, max_deg))
+    q[:n_joints] += np.radians(np.clip(dq * gain, -max_deg, max_deg))
     return True
 
 
@@ -206,14 +210,14 @@ def move_tip_to(model, data, q, target_xyz, max_iters=60):
         err = np.asarray(target_xyz, float) - tip
         if np.linalg.norm(err) < 0.006:
             return True
-        for k in range(3):
+        for k in range(4):
             q[k] = float(data.qpos[k])
         move_tip(model, data, q, err * 0.5)
         servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
     return np.linalg.norm(np.asarray(target_xyz) - _tip_and_axis(model, data)[0]) < 0.020
 
 
-def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=40):
+def descend_until(model, data, q, z_target, dz=-0.008, gain=1.0, max_iters=110):
     """Lower the tip to ``z_target`` in FK closed loop.
 
     The position servos hold a static error of ~1.5 deg under gravity, which is larger
@@ -373,27 +377,29 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
     if verbose:
         print(f"  jaw axis aligned: j5 = {np.degrees(j5):.1f} deg")
 
-    # ---- phase 2: side entry ------------------------------------------------
-    # A cube on a table is grasped on two opposite faces, and the wrist camera looks
-    # down the tool axis, so a straight descent buries the gripper in its own view and
-    # disturbs the cube on contact. Instead: go down beside the cube, then slide in
-    # sideways so the jaws straddle two faces while the camera stays above.
-    cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
-    cube_xyz = data.xpos[cube_body].copy()
+    # ---- phase 1c: compensate the camera's parallax -------------------------
+    # Centring puts the cube on the *camera's* optical axis, but the camera sits off the
+    # tool axis, so the two are parallel lines separated by the mount offset. Moving the
+    # arm by that offset puts the tool axis -- not the camera axis -- on the cube.
+    l4 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link4")
     l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
-    jaw = data.xmat[l5].reshape(3, 3) @ np.array([1.0, 0.0, 0.0])
-    jaw[2] = 0.0
-    jaw /= np.linalg.norm(jaw)
-    stand_off = 0.035                      # clear of the cube before sliding in
-    hover = cube_xyz - jaw * stand_off
-    hover[2] = 0.050                       # fingertip just above the cube's mid-height
-    if not move_tip_to(model, data, q, hover):
-        return {"ok": False, "reason": "could not reach the side-entry hover point"}
-    # slide in along the jaw axis at the cube's mid-height
-    enter = hover + jaw * stand_off
-    enter[2] = 0.012
-    if not move_tip_to(model, data, q, enter):
-        return {"ok": False, "reason": "lateral entry did not reach the cube"}
+    m_local = np.array([-0.05840, -0.0576, -0.0007]) - np.array([-0.07385, -0.001, 0.0])
+    m_world = data.xmat[l4].reshape(3, 3) @ m_local
+    tip_now, axis_now = _tip_and_axis(model, data)
+    m_perp = m_world - np.dot(m_world, axis_now) * axis_now
+    if not move_tip_to(model, data, q, tip_now + m_perp, max_iters=40):
+        return {"ok": False, "reason": "parallax compensation did not converge"}
+    if verbose:
+        print(f"  parallax compensation: |m_perp| = {np.linalg.norm(m_perp)*1000:.1f} mm")
+
+    # ---- phase 2: descend straight down, holding x/y ------------------------
+    # Descending along the tool axis is not vertical: the arm reaches out as it lowers
+    # and the tip drifts about 15 mm, which is enough for the jaws to land on the cube
+    # instead of around it. So the descent holds x/y and moves z only.
+    above, _ = _tip_and_axis(model, data)
+    grasph = np.array([above[0], above[1], 0.010])
+    if not move_tip_to(model, data, q, grasph, max_iters=80):
+        return {"ok": False, "reason": "vertical descent did not converge"}
 
     # ---- phase 3: close and lift ------------------------------------------
     servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_CLOSE]))

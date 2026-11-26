@@ -169,6 +169,27 @@ With the revolute jaws the descent now stops at 17 mm because a **fifth contact*
 appears -- the jaws meeting the cube -- so the approach needs a little more lateral
 clearance before the final descent.
 
+## The working sequence
+
+A full grasp now works in simulation, from one seed, with this order:
+
+1. **CENTRE** on the tool-axis pixel, re-identifying the image Jacobian every iteration
+   (the camera moved to the other side of the arm, so an old Jacobian has the wrong
+   signs).
+2. **ALIGN** j5 so the jaw opening axis is parallel to a world axis. This is what makes
+   the grasp possible at all: aligned, the open jaws sit 40.8 mm apart and clear a 30 mm
+   cube by 5.4 mm a side; unaligned they close on its corners.
+3. **PARALLAX COMPENSATION**, 56.6 mm. Centring puts the cube on the *camera's* axis; the
+   camera sits off the tool axis, so the arm then has to move by that offset to put the
+   *tool* axis on the cube. Without it the fingers land beside the cube -- measured
+   earlier as a 29 mm miss with a 1 px centring error.
+4. **DESCEND to z = 10 mm holding x/y.** Descending along the tool axis is not vertical:
+   the arm reaches out as it lowers and the tip drifts ~15 mm, enough to land the jaws on
+   the cube. A height sweep confirms 10 mm is the grasp height (lift +57 mm); at 20, 30
+   and 40 mm the jaws only touch the top face and lift nothing.
+
+Evidence: with that sequence one seed lifts the cube **53-57 mm** clear of the table.
+
 ## The remaining aim error is a parallax, not a tolerance
 
 Tracing the descent with the revolute jaws shows the tip arriving at
