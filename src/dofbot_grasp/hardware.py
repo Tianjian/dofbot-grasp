@@ -53,6 +53,19 @@ class RobotIO(Protocol):
         """Wrist pixel -> base-frame point on the horizontal plane ``z_plane``."""
 
 
+class RealCameraLike(Protocol):
+    """What ``sim/real_camera.py`` provides for resampling through real intrinsics."""
+
+    width: int
+    height: int
+
+    def render_geometry(self) -> tuple[int, int, float]: ...
+
+    def sample_offsets(self) -> tuple[int, int]: ...
+
+    def apply(self, ideal_render: np.ndarray) -> np.ndarray: ...
+
+
 class SimRobot:
     """MuJoCo cell: the model in ``sim/dofbot_se.xml``.
 
@@ -69,7 +82,7 @@ class SimRobot:
         observer_camera="overview",
         img_w=320,
         img_h=240,
-        real_cameras: dict[str, object] | None = None,
+        real_cameras: dict[str, "RealCameraLike"] | None = None,
     ) -> None:
         import mujoco
 
