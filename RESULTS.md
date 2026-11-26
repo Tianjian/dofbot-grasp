@@ -87,14 +87,20 @@ Wrist-camera IBVS, no camera-calibration guesswork in the loop:
    (**1-2 mm** typical);
 4. **descend vertically** holding x/y to z = 10 mm, **close**, **lift**.
 
-| cube position | result |
-|---|---|
-| (20, 140) mm | **grasped, lift 50.0 mm** |
-| (-60, 140) mm | **grasped, lift 55.5 mm** |
-| (60, 140) mm | **grasped, lift 52.5 mm** |
-| (100, 140) mm | failed |
+| cube position | radius | lift | cube drift before the clamp |
+|---|---|---|---|
+| (20, 140) mm | 141 mm | **48.7 mm** | 7 mm |
+| (-60, 140) mm | 152 mm | **49.9 mm** | 2 mm |
+| (60, 140) mm | 152 mm | **52.2 mm** | 6 mm |
+| (40, 100) mm | 108 mm | **52.9 mm** | 58 mm |
 
-**3 of 4 seeds grasp**, lifting the cube 50-55 mm clear of the table.
+**All four seeds grasp**, lifting the cube 49-53 mm clear of the table. Drift is how far the
+cube travelled before the jaws closed: three of the four are clean (2-7 mm), the close-in
+one is shoved along and then gripped, which by the agreed criterion still counts.
+
+The graspable range is narrower than the kinematics allow. Closer than about 100 mm radius
+the centring fails -- the fingers occlude the cube in a 90 deg field -- and at 172 mm the
+reach leaves the arm in a configuration whose wrist is already on its limit.
 
 The graspable region was mapped by sweeping the kinematics with collision filtering:
 grasp points split evenly about y (49 % at y > 0) with the dense core at
@@ -104,14 +110,36 @@ x in [-80, 80] mm, y in [-140, -60] mm on the -y side and the mirror on the +y s
 
 | item | status |
 |---|---|
-| back-projection residual | 1-2 mm typical but **11 mm** in the recorded run; likely the silhouette centroid sitting off the cube's centre on an oblique view |
-| seed (100, 140) | fails; the centring or the jaw clearance gives out there |
-| sim-to-real transfer | not yet run: the simulation pipeline has never been executed on the arm |
+| back-projection residual | 1-3 mm after the tracker rework; the 11 mm case was the colour centroid sitting off the cube on an oblique view |
+| near field | centring fails inside ~100 mm radius: the fingers occlude the cube |
+| sim-to-real transfer | **not yet run** -- the controller has never driven the arm |
+
+## Controller and the CI gate
+
+`dofbot_grasp.controller` holds the phases once; `dofbot_grasp.hardware` provides a MuJoCo
+backend and a serial backend behind five methods (`docs/controller-architecture.md`).
+
+Two faults dominated the debugging, both invisible in a height-only success test:
+
+* **centring settled in a local minimum.** With the wrist pinned on its limit the pixel
+  gradient stalled 23 px short while a 1.8 px solution sat ten degrees away on the shoulder
+  and wrist. The controller now tries a small joint-space grid when the error stops
+  improving, skipping probes that would drive the fingers into the cube.
+* **the descent drifted.** Height-only commands let the lateral error grow from 8 mm to over
+  15 mm across one descent, past the 10 mm the jaws allow; correcting all three axes each
+  step removes it. The descent also stops on mechanical contact rather than vision -- the
+  fingers entering the frame move the silhouette centroid, which produced both false stops
+  and false continues.
+
+`sim/grasp_trial.py` runs those four positions and exits non-zero below a rate. CI runs it as
+a **blocking** job at a threshold of 0.75, so one seed of slack remains before a robustness
+regression turns the build red.
 
 ## Reproducing
 
 ```bash
 python -m pytest -q                              # 71 tests
-MUJOCO_GL=egl python sim/ibvs_sim.py             # four-seed grasp trial
-MUJOCO_GL=egl python sim/record_ibvs.py          # 410-frame recording -> sim/ibvs_sim.mp4
+MUJOCO_GL=egl python sim/grasp_trial.py --min-rate 0.75   # the CI gate, four positions
+MUJOCO_GL=egl python sim/record_controller.py             # 2793-frame recording -> sim/controller_sim.mp4
+MUJOCO_GL=egl python sim/ibvs_sim.py                     # the earlier image-servoing study
 ```

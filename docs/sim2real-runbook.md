@@ -63,6 +63,28 @@ found (see `docs/hardware-notes.md`).
 
 ## Current state
 
-Phases 1-2 and the planning maths are implemented and unit-tested; the motion phases of
-`run_ibvs_real.py` are **not wired yet**. The simulation runs the same sequence and
-grasps 3 of 4 cube positions (`RESULTS.md`).
+The sequence lives in `dofbot_grasp.controller` and runs unchanged against either backend
+(`docs/controller-architecture.md`). In simulation it grasps **4 of 4** cube positions,
+lifting 49-53 mm (`RESULTS.md`).
+
+`scripts/run_ibvs_real.py` has the bus wrapper, the geometry and a `--dry-run` planner, but
+its motion phases are **not wired to the controller yet** -- the arm has never run this.
+
+## What the simulation already settled
+
+Three behaviours that a first real run would otherwise have to discover:
+
+* the descent must correct all three axes. Height-only steps let the lateral error grow from
+  8 mm to over 15 mm in one descent, past the 10 mm the jaws allow;
+* the descent must stop on **mechanical** contact. Watching the cube's pixel instead gave
+  both false stops (fingers entering the frame move the silhouette centroid) and false
+  continues (the arm pressed the cube through the table);
+* the centring needs a way out of local minima. When the error stops improving it tries a
+  small joint-space grid; without it the loop sat 23 px short while a 1.8 px solution sat
+  ten degrees away.
+
+## Range
+
+Grasping works between roughly 100 and 160 mm of the base. Nearer than 100 mm the fingers
+occlude the cube in a 90 deg field and centring fails; further out the wrist reaches its
+limit before the cube is centred.
