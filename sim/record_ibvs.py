@@ -88,6 +88,10 @@ def main():
         q[:3] += np.radians(dq)
         S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
 
+    j5 = S.align_jaw_axis(model, data, q)
+    S.servos(model, data, np.array([*q, S.GRIP_OPEN]))
+    shoot(f"ALIGN j5={__import__('numpy').degrees(j5):.0f}deg")
+
     for step in range(40):
         tip, _ = S._tip_and_axis(model, data)
         shoot(f"DESCEND step{step} tip_z={tip[2]*1000:.0f}mm")

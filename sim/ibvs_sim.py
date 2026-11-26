@@ -60,6 +60,40 @@ def detect_cube(img: np.ndarray) -> dict | None:
     }
 
 
+def align_jaw_axis(model, data, q):
+    """Rotate j5 so the jaws close along a world-horizontal axis.
+
+    A cube resting squarely on the table is best grasped on two opposite faces, so the
+    jaw opening axis should be parallel to a horizontal axis. j5 turns the gripper base
+    about the tool axis; because the camera hangs off link4 it is not affected.
+    """
+    j5 = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "joint5")]
+    best = None
+    for d in np.linspace(-np.pi, np.pi, 181):
+        q[4] = d
+        for k, v in zip(range(5), q[:5], strict=True):
+            data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]] = v
+        mujoco.mj_forward(model, data)
+        l5 = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "link5")
+        jaw = data.xmat[l5].reshape(3, 3) @ np.array([1.0, 0.0, 0.0])
+        horiz = np.array([jaw[0], jaw[1], 0.0])
+        norm = np.linalg.norm(horiz)
+        if norm < 1e-6:
+            continue
+        horiz /= norm
+        # best when the jaw axis is parallel to world x or y
+        score = max(abs(horiz[0]), abs(horiz[1]))
+        if best is None or score > best[0]:
+            best = (score, float(d))
+    q[4] = best[1]
+    for k, v in zip(range(5), q[:5], strict=True):
+        data.qpos[model.jnt_qposadr[mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{k + 1}")]] = v
+    mujoco.mj_forward(model, data)
+    return best[1]
+
+
 def project_point(model, data, point, cam="wrist_cam") -> tuple[float, float]:
     """Where a world point lands in the wrist image (pinhole, MuJoCo intrinsics)."""
     cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam)
@@ -244,6 +278,12 @@ def run_once(seed_cube_xy, max_iters=40, verbose=False):
         servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
     else:
         return {"ok": False, "reason": "centre did not converge", "trace": trace}
+
+    # ---- phase 1b: turn the gripper base so the jaws close on two faces ----
+    j5 = align_jaw_axis(model, data, q)
+    servos(model, data, np.array([q[0], q[1], q[2], q[3], q[4], GRIP_OPEN]))
+    if verbose:
+        print(f"  jaw axis aligned: j5 = {np.degrees(j5):.1f} deg")
 
     # ---- phase 2: descend to the grasp height (FK closed loop) -------------
     # The cube legitimately leaves the frame as the hand closes in, so the descent is

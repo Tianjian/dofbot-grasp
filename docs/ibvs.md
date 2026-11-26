@@ -31,6 +31,24 @@ So the controller consumes only the tracker's centroid and area
 | descent stop | fingertip z <= 12 mm (FK) | area saturates at ~7 % because the camera looks along the tool axis and the cube sinks below the view as the hand closes |
 | descent is FK-only | yes | the cube legitimately leaves the frame; vision only aligns, as planned for the real arm |
 
+## The camera belongs on link4, not link5
+
+Mounting the wrist camera on link5 (next to the jaws) was wrong twice over. On the real
+arm the camera hangs off the forearm while the jaws sit on the rotating gripper base, so:
+
+* rotating j5 turned the camera with the jaws, making "turn the gripper base" a no-op
+  in simulation;
+* the view was a straight-down look with the fingers in the middle of it.
+
+Moved to link4, looking along the tool axis (which is link4's **-x**), the view becomes
+the side-above view the real camera returns, with the fingers only at the bottom edge.
+Centring then converges sub-pixel (160.7 px against a 160.0 px target) because the
+target pixel no longer drifts with j5.
+
+A cube resting on the table is best grasped on two opposite faces, so a new stage turns
+j5 to put the jaw opening axis parallel to a world-horizontal axis before descending.
+With j5 free of the camera, this is now a real degree of freedom.
+
 ## Gripper kinematics, matching the official URDF
 
 The DOFBOT-SE URDF drives the jaws as **revolute** joints, with the second one
