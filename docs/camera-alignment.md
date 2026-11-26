@@ -135,6 +135,18 @@ With the model expressed in MuJoCo's convention and the roll fitted against the 
 camera, the two agree to a **25 px mean**. That mattered: the pose search had been choosing
 viewpoints that cannot see the cube, which is why seeds kept reporting "cube not visible".
 
+## Putting the camera in the loop exposes why the servo looked blind
+
+The user noticed the arm kept moving while the wrist view showed no cube, and asked whether
+the servo used the camera at all. It did not: `grasp_prior` fitted the cube **once**, then
+drove the approach and the descent open loop. A centimetre or two of fitting error was
+silently carried all the way to the jaws.
+
+Making it re-fit every approach step answers the question and immediately shows the cost:
+three of four seeds now fail with **"lost the cube during the approach"**. With a 26.6 deg
+field and the camera 56 mm off the tool axis, moving the arm far enough to align over the
+cube takes the cube out of frame, so the loop has nothing to correct against.
+
 ## Still open
 
 **The camera's orientation, in two parts.**

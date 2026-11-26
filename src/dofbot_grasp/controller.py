@@ -416,58 +416,98 @@ def align_jaws_to_yaw(io, yaw_rad: float) -> float:
     return best[1]
 
 
-def grasp_prior(
-    io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
-) -> dict:
-    """Grasp from the fitted cube pose, without pixel servoing.
-
-    The camera sits 56 mm off the tool axis, and at the poses where the cube is visible the
-    tool axis meets the table *outside* the frame -- so the old "drive the cube onto the
-    tool-axis pixel" target does not exist. Once the cube's 3-D pose is fitted there is no
-    need for it: go to the fitted centre with the jaws squared to the fitted yaw.
-    """
-    say = log or (lambda _m: None)
-    stage = on_stage or (lambda _s: None)
-    stage("FIT")
+def _fit_once(io, detect, pose=None):
+    """One frame -> the fitted cube (x, y, yaw), or None."""
     det = detect(io.capture_wrist())
-    if det is None:
-        return {"ok": False, "reason": "cube not visible"}
-    pose0 = io.read_joints()
+    if det is None or det.get("mask") is None:
+        return None
+    p0 = pose or io.read_joints()
     est = io.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
     if est is None:
-        return {"ok": False, "reason": "back-projection failed"}
-    mask = det.get("mask")
-    if mask is None:
-        return {"ok": False, "reason": "no mask from the detector"}
+        return None
 
-    def _project(pts, _p=pose0):
+    def _project(pts, _p=p0):
         return io.project(pts, _p)
 
     fitted = fit_cube(
-        mask, _project, edge=GRASP.cube_edge_m, seed_xy=(float(est[0]), float(est[1]))
+        det["mask"], _project, edge=GRASP.cube_edge_m, seed_xy=(float(est[0]), float(est[1]))
     )
     if fitted is None or fitted["iou"] <= 0.45:
-        return {"ok": False, "reason": "cube fit too weak"}
-    est = np.array([fitted["centre_m"][0], fitted["centre_m"][1], GRASP.table_z_m])
+        return None
+    return fitted
+
+
+def grasp_prior(
+    io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
+) -> dict:
+    """Grasp with the camera in the loop, not just at the start.
+
+    The servo used to be open loop after a single fit: if that one estimate was a couple of
+    centimetres out, the approach drifted off and the jaws closed on air without anything
+    noticing. Now every approach step re-fits the cube from a fresh frame, so the target
+    follows the cube as the arm moves -- and the arm keeps its height until it is actually
+    above the cube, which stops the fingers sweeping it aside.
+    """
+    say = log or (lambda _m: None)
+    stage = on_stage or (lambda _s: None)
+
+    stage("FIT")
+    fitted = _fit_once(io, detect)
+    if fitted is None:
+        return {"ok": False, "reason": "cube not visible"}
+    say(
+        f"cube at ({fitted['centre_m'][0] * 1000:.0f}, {fitted['centre_m'][1] * 1000:.0f}) mm, "
+        f"iou {fitted['iou']:.2f}, yaw {np.degrees(fitted['yaw_rad']):.0f} deg"
+    )
     yaw = fitted["yaw_rad"]
-    say(f"cube fitted: iou {fitted['iou']:.2f}, yaw {np.degrees(yaw):.0f} deg")
 
     stage("ALIGN")
     j5 = align_jaws_to_yaw(io, yaw)
     say(f"jaws squared at j5 = {j5:+.0f} deg")
 
+    # ---- approach with the camera in the loop ---------------------------------
     stage("APPROACH")
-    if not move_tip_to(io, np.array([est[0], est[1], GRASP.fingertip_grasp_z_m]), max_iters=120):
+    clearance = GRASP.table_z_m + GRASP.cube_edge_m + 0.035
+    lost = 0
+    for it in range(30):
+        fitted = _fit_once(io, detect)
+        if fitted is None:
+            lost += 1
+            if lost >= 3:
+                return {"ok": False, "reason": "lost the cube during the approach"}
+            continue
+        lost = 0
+        cube_xy = np.array(fitted["centre_m"])
+        tip, _ = tip_and_axis(io.read_joints())
+        lateral = float(np.linalg.norm(tip[:2] - cube_xy))
+        say(
+            f"  it{it}: cube ({cube_xy[0] * 1000:.0f},{cube_xy[1] * 1000:.0f})  "
+            f"tip ({tip[0] * 1000:.0f},{tip[1] * 1000:.0f})  gap {lateral * 1000:.0f} mm"
+        )
+        if lateral < 0.008:
+            break
+        # stay high while closing the gap, so the fingers cannot sweep the cube aside
+        aim = np.array([cube_xy[0], cube_xy[1], max(tip[2], clearance)])
+        move_tip_to(io, aim, max_iters=12, tol=0.004, contact_abort=False)
+    else:
         return {"ok": False, "reason": "approach did not converge"}
-    say("at grasp height")
+
+    # ---- straight down onto the cube ------------------------------------------
+    fitted = _fit_once(io, detect)
+    if fitted is None:
+        return {"ok": False, "reason": "lost the cube before the descent"}
+    target = np.array([fitted["centre_m"][0], fitted["centre_m"][1], GRASP.fingertip_grasp_z_m])
+    say("lowering onto the cube")
+    if not move_tip_to(io, target, max_iters=60):
+        return {"ok": False, "reason": "descent did not reach the grasp height"}
 
     stage("CLOSE")
     io.command(None, gripper=1.0)
     stage("LIFT")
     lift = dict(io.read_joints())
-    lift[3] = lift[3] + 20.0  # elbow: raising the wrist instead just twists the grip
+    lift[3] = lift[3] + 20.0
     io.command(lift, gripper=1.0)
-    return {"ok": True, "cube": est.tolist(), "yaw": yaw}
+    return {"ok": True, "cube": [float(v) for v in fitted["centre_m"]], "yaw": float(yaw)}
 
 
 def grasp(
