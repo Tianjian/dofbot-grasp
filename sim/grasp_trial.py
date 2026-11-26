@@ -1,0 +1,115 @@
+"""Run the shared controller over several cube positions and report the success rate.
+
+This is the CI gate: `python sim/grasp_trial.py --min-rate 0.75` exits non-zero when the
+simulated grasp rate drops below the threshold, so a change that quietly breaks the
+controller cannot land.
+
+It drives ``dofbot_grasp.controller`` through ``SimRobot`` -- the same phase code the arm
+will run -- so the gate measures the shipped sequence, not a copy of it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+SEEDS = [
+    (0.020, 0.140),
+    (-0.060, 0.140),
+    (0.060, 0.140),
+    (0.100, 0.140),
+]
+TASK_POSE = {1: 90.0 - 10.0, 2: 90.0 + 8.0, 3: 90.0 - 88.0, 4: 90.0 - 76.0, 5: 135.0}
+
+
+def sim_intrinsics(width: int = 320, height: int = 240, fovy_deg: float = 90.0) -> dict:
+    """The simulated wrist camera is a pinhole with a declared vertical field of view."""
+    f = (height / 2.0) / math.tan(math.radians(fovy_deg) / 2.0)
+    return {
+        "fx": f,
+        "fy": f,
+        "cx": width / 2.0,
+        "cy": height / 2.0,
+        "dist": [0.0, 0.0, 0.0, 0.0, 0.0],
+        "width": width,
+        "height": height,
+    }
+
+
+def make_detector():
+    """Adapter from the sim's RGB blob rule to the controller's dict interface.
+
+    The rendered cube is an unlit orange-brown; ``perception.detect_cube`` thresholds HSV
+    saturation for the real camera and does not fire on it, so the simulator keeps its own
+    simple rule.
+    """
+    sys.path.insert(0, str(ROOT / "sim"))
+    import ibvs_sim as sim
+
+    def detect(frame):
+        if frame is None:
+            return None
+        det = sim.detect_cube(frame)
+        if det is None:
+            return None
+        return {"centre": tuple(det["centre"])}
+
+    return detect
+
+
+def run(seed, *, verbose: bool = False) -> dict:
+    import mujoco
+
+    from dofbot_grasp.controller import grasp
+    from dofbot_grasp.hardware import SimRobot
+
+    model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
+    data = mujoco.MjData(model)
+    io = SimRobot(model, data)
+
+    jadr = data.qpos
+    cube = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")]
+    jadr[cube : cube + 3] = [seed[0], seed[1], 0.015]
+    for i in range(1, 6):
+        jadr[
+            model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")]
+        ] = math.radians(TASK_POSE[i] - 90.0 if i < 5 else TASK_POSE[i] - 135.0)
+    mujoco.mj_forward(model, data)
+
+    before = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
+    result = grasp(io, make_detector(), log=print if verbose else None)
+    after = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
+    lift = (after - before) * 1000
+    result.update({"seed": seed, "lift_mm": lift, "ok": bool(result.get("ok") and lift > 20)})
+    return result
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--min-rate", type=float, default=0.75)
+    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--json", default=None, help="write the per-seed results here")
+    args = ap.parse_args()
+
+    rows = [run(s, verbose=args.verbose) for s in SEEDS]
+    wins = sum(r["ok"] for r in rows)
+    rate = wins / len(rows)
+    for r in rows:
+        print(
+            f"  cube at {r['seed']} -> ok={r['ok']}  lift={r['lift_mm']:+.1f} mm"
+            f"  {r.get('reason', '')}"
+        )
+    print(f"\ngrasp success rate: {wins}/{len(rows)} = {rate:.2f}  (threshold {args.min_rate:.2f})")
+    if args.json:
+        Path(args.json).write_text(json.dumps(rows, indent=2))
+    return 0 if rate >= args.min_rate else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

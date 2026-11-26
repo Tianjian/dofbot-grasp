@@ -18,11 +18,11 @@ class BusParams:
     """Serial link and the two timing traps that silently corrupt data."""
 
     port: str = "/dev/ttyUSB0"
-    baud: int = 115200          # 1 000 000 does not work on this CH340
-    guard_after_write_s: float = 0.55   # a read frame inside ~0.3 s cancels the move
+    baud: int = 115200  # 1 000 000 does not work on this CH340
+    guard_after_write_s: float = 0.55  # a read frame inside ~0.3 s cancels the move
     settle_tolerance_deg: float = 0.35  # poll until two samples differ by less than this
     settle_timeout_s: float = 10.0
-    move_time_s: float = 1.2    # the move time carried by every write6 frame
+    move_time_s: float = 1.2  # the move time carried by every write6 frame
 
 
 @dataclass(frozen=True)
@@ -76,12 +76,12 @@ class GraspParams:
     # Image-space servoing.
     deadband_px: float = 3.0
     max_step_deg: float = 2.0
-    gain: float = 0.8
+    gain: float = 0.5
     # Per-step joint steps used to identify the image Jacobian.
     probe_deg: float = 3.0
     # Re-identifying every iteration matters: the camera sits off the tool axis, so a
     # Jacobian measured elsewhere has the wrong gains and sometimes wrong signs.
-    reidentify_every: int = 1
+    reidentify_every: int = 4
     # Table plane used when back-projecting a pixel to a 3-D point.
     table_z_m: float = 0.015
 
@@ -90,10 +90,10 @@ class GraspParams:
 class SafetyParams:
     """Limits for an unattended run. The observer camera is the referee."""
 
-    max_servo_lag_deg: float = 8.0      # beyond this something is blocking the arm
-    max_tip_descent_m: float = 0.004    # per commanded descent step
+    max_servo_lag_deg: float = 8.0  # beyond this something is blocking the arm
+    max_tip_descent_m: float = 0.004  # per commanded descent step
     require_observer_confirmation: bool = True
-    abort_on_repeated_loss: int = 3     # consecutive frames without the cube
+    abort_on_repeated_loss: int = 3  # consecutive frames without the cube
 
 
 BUS = BusParams()
