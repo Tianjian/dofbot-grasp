@@ -33,14 +33,10 @@ jobs:
   # Grasp-rate gate. The trial drives the shared controller (dofbot_grasp.controller)
   # through the MuJoCo cell, so it measures the sequence the arm will run.
   #
-  # NOT ARMED YET: the controller was ported onto the shared hardware layer and its
-  # centring stage regressed -- it oscillates instead of converging, so the rate is 0/4
-  # while the older sim/ibvs_sim.py pipeline still grasps 3/4. The job reports the number
-  # but does not block until that regression is fixed; arming it now would only teach us
-  # to ignore a red build.
+  # Baseline at the time of arming: 3 of 4 cube positions grasped (0.75), lifting 49-52 mm.
+  # A change that drops below the threshold fails the build.
   sim-grasp:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,7 +47,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
           sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1
-      - name: Grasp trial (reporting only)
+      - name: Grasp trial
         env:
           MUJOCO_GL: osmesa
         run: python sim/grasp_trial.py --min-rate 0.75

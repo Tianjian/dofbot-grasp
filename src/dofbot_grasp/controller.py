@@ -180,6 +180,8 @@ def centre(
     point = io.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
     if point is None:
         return False
+    best_err = float("inf")
+    stalled = 0
     for it in range(max_iters):
         pose = io.read_joints()
         J = _image_jacobian(io, pose, point)
@@ -191,8 +193,21 @@ def centre(
         e = np.array([det["centre"][0] - target_px[0], det["centre"][1] - target_px[1]])
         if log:
             log(f"  centre it{it}: err=({e[0]:+.1f},{e[1]:+.1f})")
+        norm = float(np.linalg.norm(e))
         if abs(e[0]) < GRASP.deadband_px and abs(e[1]) < GRASP.deadband_px:
             return True
+        if norm < best_err - 0.5:
+            best_err, stalled = norm, 0
+        else:
+            stalled += 1
+            if stalled >= 6:
+                # The pixel map has local minima: with j4 pinned, the gradient settles 23 px
+                # short while a 1.8 px solution sits ten degrees away on j2 and j4.
+                jumped = _escape_local_minimum(io, detect, target_px, pose)
+                best_err, stalled = float("inf"), 0
+                if not jumped:
+                    return False
+                continue
         dq = np.clip(
             -GRASP.gain * np.linalg.pinv(J) @ np.asarray(e), -GRASP.max_step_deg, GRASP.max_step_deg
         )
@@ -237,6 +252,44 @@ def _weighted_step(J: np.ndarray, err: np.ndarray, n: int) -> np.ndarray:
     lam = 1e-2 * float(np.trace(J @ Winv @ J.T)) / 2.0
     dq = -GRASP.gain * JT @ np.linalg.solve(J @ Winv @ J.T + lam * np.eye(2), err)
     return dq
+
+
+def _escape_local_minimum(io, detect: Callable, target_px, pose: dict[int, float]) -> bool:
+    """Small joint-space search used when the pixel gradient stalls.
+
+    Costs a handful of moves, which is acceptable for a recovery and much cheaper than
+    failing the grasp. Returns True when a better configuration was found and applied.
+    """
+    current = detect(io.capture_wrist())
+    if current is None:
+        return False
+    best = float(np.linalg.norm(np.array(current["centre"]) - np.array(target_px)))
+    best_q = None
+    for dj2 in (-10.0, 0.0, 10.0, 20.0):
+        for dj4 in (-10.0, 0.0, 10.0, 20.0):
+            if dj2 == 0.0 and dj4 == 0.0:
+                continue
+            probe = dict(pose)
+            probe[2] += dj2
+            probe[4] += dj4
+            if not (0.0 < probe[2] < 180.0 and 0.0 < probe[4] < 180.0):
+                continue
+            # probing must not drive the fingers into the cube; the escape exists to fix
+            # aiming, not to test how hard the table is
+            if tip_and_axis(probe)[0][2] < GRASP.table_z_m + GRASP.cube_edge_m + 0.015:
+                continue
+            io.command(probe)
+            det = detect(io.capture_wrist())
+            if det is None:
+                continue
+            err = float(np.linalg.norm(np.array(det["centre"]) - np.array(target_px)))
+            if err < best:
+                best, best_q = err, dict(probe)
+    if best_q is None:
+        io.command(pose)
+        return False
+    io.command(best_q)
+    return True
 
 
 def _image_jacobian(io, pose: dict[int, float], point_m: np.ndarray) -> np.ndarray | None:
