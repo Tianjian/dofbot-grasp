@@ -138,6 +138,11 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
         # the gripper, so its final position says nothing about pushing
         if tag == "CLOSE":
             seen["close"] = data.xpos[cube_body].copy()
+        # Sample the height while the cube is still being held. Reading it after the sequence
+        # returns measures it after PARK, and parking had been done with the jaws shut -- so a
+        # successful grasp was carried across the cell, dropped there, and scored as a failure.
+        if tag in ("VERIFY", "HOLD"):
+            seen.setdefault("lifted", float(data.xpos[cube_body][2]))
 
     result = grasp_measured(
         io,
@@ -145,7 +150,10 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
         on_stage=on_stage,
         log=print if verbose else None,
     )
-    after = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
+    end_z = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
+    # Prefer the height sampled while the cube was held; fall back to the end state for flows
+    # that never reach a lift.
+    after = float(seen.get("lifted", end_z))
     lift = (after - before) * 1000
     # The user's criterion: lifting the cube is the success, whether or not the fingers
     # had to shove it along the way. ``drift_mm`` still reports how far the cube travelled

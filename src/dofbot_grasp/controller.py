@@ -288,7 +288,27 @@ def grasp_measured(
     say("at grasp height")
 
     guard()
+    # The arm's own repeatability is 10-20 mm at the fingertip -- the same order as the 10 mm
+    # the jaws allow -- so the descent lands beside the cube often enough to matter. Correct
+    # once more from here, where the camera is as close to the cube as it ever gets, and only
+    # then close. This is the one place a second look is worth its cost.
+    for _fix in range(2):
+        again = measure_cube(io, detect)
+        if again is None:
+            break
+        drift = float(np.hypot(again["x"] - x, again["y"] - y))
+        if drift < 0.006:
+            break
+        say(f"correcting {drift * 1000:.0f} mm before closing")
+        x, y = again["x"], again["y"]
+        if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m])):
+            break
+
     stage("CLOSE")
+    # Reference measured from the grasp pose, before the jaws move: after the lift the cube
+    # either comes with the arm (same place in frame, same size) or stays on the table (lower
+    # and smaller). Comparing against this is what the verification needs, and it must be
+    # taken here -- travelling somewhere else to judge throws away the grasp it is judging.
     io.command(None, gripper=1.0)
     stage("LIFT")
     lift = dict(io.read_joints())
@@ -768,7 +788,8 @@ def grasp_task(
     tip_now, _axis = tip_and_axis(io.read_joints())
     say(
         f"above the cube: tip ({tip_now[0] * 1000:.0f}, {tip_now[1] * 1000:.0f}, "
-        f"{tip_now[2] * 1000:.0f}) mm, target ({x * 1000:.0f}, {y * 1000:.0f}, {clearance * 1000:.0f})"
+        f"{tip_now[2] * 1000:.0f}) mm, target ({x * 1000:.0f}, {y * 1000:.0f}, "
+        f"{clearance * 1000:.0f})"
     )
     guard()
 
@@ -783,7 +804,28 @@ def grasp_task(
     )
     guard()
 
+    # The arm's own repeatability is 10-20 mm at the fingertip -- the same order as the 10 mm
+    # the jaws allow -- so the descent lands beside the cube often enough to matter. Correct
+    # once more from here, where the camera is as close to the cube as it ever gets, and only
+    # then close. This is the one place a second look is worth its cost.
+    for _fix in range(2):
+        again = measure_cube(io, detect)
+        if again is None:
+            break
+        drift = float(np.hypot(again["x"] - x, again["y"] - y))
+        if drift < 0.006:
+            break
+        say(f"correcting {drift * 1000:.0f} mm before closing")
+        x, y = again["x"], again["y"]
+        if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m])):
+            break
+
     stage("CLOSE")
+    # Reference measured from the grasp pose, before the jaws move: after the lift the cube
+    # either comes with the arm (same place in frame, same size) or stays on the table (lower
+    # and smaller). Comparing against this is what the verification needs, and it must be
+    # taken here -- travelling somewhere else to judge throws away the grasp it is judging.
+    at_grasp = detect(io.capture_wrist())
     io.command(None, gripper=1.0)
 
     stage("LIFT")
@@ -795,24 +837,51 @@ def grasp_task(
     # jaws it sits ~60 mm from the lens instead of ~150 mm on the table, so it covers several
     # times the area; a cube still on the table does not. That needs no extrinsics and no
     # second camera, and the difference is large enough to be unambiguous.
+    # Verify where the arm already is. The camera is bolted to the wrist, so a cube held in
+    # the jaws keeps its place in frame and roughly its size, while one left behind on the
+    # table slides down and shrinks as the arm rises. No travel, no second camera, no
+    # extrinsics -- and the grasp being judged is not disturbed by the judging.
     stage("VERIFY")
-    io.command(dict(OBSERVE_POSE), gripper=1.0)
     after = detect(io.capture_wrist())
-    area_before = float(found.get("area", 0) or 0)
-    area_after = 0.0 if after is None else float(after.get("area", 0) or 0)
-    ratio = area_after / area_before if area_before > 0 else 0.0
-    verified = ratio >= 2.0
-    say(f"verify: cube area {area_before:.0f} -> {area_after:.0f} px (x{ratio:.1f})")
+    if at_grasp is None or after is None:
+        verified = False
+        shift = None
+        ratio = None
+        say("verify: cube not measurable after the lift")
+    else:
+        shift = float(
+            np.linalg.norm(
+                np.asarray(after["centre"], float) - np.asarray(at_grasp["centre"], float)
+            )
+        )
+        area_g = float(at_grasp.get("area", 0) or 0)
+        ratio = float(after.get("area", 0) or 0) / area_g if area_g > 0 else 0.0
+        verified = shift <= 60.0 and 0.6 <= ratio <= 1.8
+        say(
+            f"verify: cube moved {shift:.0f} px, area x{ratio:.2f} "
+            f"({'still held' if verified else 'left behind'})"
+        )
     if not verified:
+        # Release before parking: a failed grasp should not be carried across the cell, and a
+        # successful one must never be. Parking with the jaws shut is how a good grasp gets
+        # thrown away, which is exactly what this did.
+        io.command(None, gripper=0.0)
         go_park(io, log=say)
         return {
             "ok": False,
             "reason": "the grasp did not verify",
             "cube": [x, y],
             "yaw": yaw,
+            "shift_px": shift,
             "area_ratio": ratio,
         }
 
     stage("HOLD")
     hold_grasp(io, hold_s, log=say, abort_check=guard)
-    return {"ok": True, "cube": [x, y], "yaw": yaw, "area_ratio": ratio, "measured": measured}
+    return {
+        "ok": True,
+        "cube": [x, y],
+        "yaw": yaw,
+        "area_ratio": ratio,
+        "measured": measured,
+    }
