@@ -75,6 +75,14 @@ class GraspParams:
     cube_edge_m: float = 0.030
     # The fingertip should end up at cube-centre height, i.e. 15 mm, and a little below
     # is better than above: at 20-40 mm the jaws only touch the top face and lift nothing.
+    #: Aim the descent this much above the modelled grasp height. The real gripper's fingers
+    #: are short while open and lengthen towards closed, so aiming at the closed-length height
+    #: puts the open fingers above the cube and the jaws close on air -- which is what the first
+    #: hardware run did. The depth search below walks back down until the jaws report contact,
+    #: so a bias here costs nothing in simulation and puts the arm in the right neighbourhood on
+    #: hardware.
+    grasp_height_bias_m: float = 0.020
+    #: Where the fingertips are aimed before the search: the model height plus the bias.
     fingertip_grasp_z_m: float = 0.010
     # Image-space servoing.
     deadband_px: float = 8.0  # ~6 mm at grasp range; the jaws tolerate ~10 mm
