@@ -111,10 +111,20 @@ False: the observer's cube check is off unless somebody who knows where the cube
 point. Its person check and the pixel-motion check are unaffected.
 
 **The observer camera's extrinsics are not right yet.** Its pose was taken from the simulated
-mount (0.410, 0.350, 0.025 aiming at the origin at 150 mm). Projecting the fingertip -- whose
-position FK knows exactly -- into the observer frame puts the marker about 140 px away from
-where the gripper actually is. So the observer can report what it sees, but not where anything
-is in base coordinates, until those extrinsics are calibrated against the arm.
+mount (0.410, 0.350, 0.025 aiming at the origin at 150 mm). Projecting the fingertip into the
+observer frame puts the marker about 140 px from where the gripper actually is.
+
+The fingertip is not a usable target for fixing that, though: the gripper hides it, its edge is
+ambiguous, and its position is itself extrapolated 80 mm along the tool axis from a camera
+mount that sits 56 mm off that axis -- calibrating against it would fold the error being
+measured into the calibration.
+
+`scripts/calibrate_observer_extrinsics.py` uses the table chessboard from
+`calib/a4_target.pdf` instead (9x6 squares of 20 mm, 8x5 inner corners). Put it flat on the
+desk, confirm it is seen with `--detect-only`, measure its top-left corner relative to the
+base plus its rotation, and solve: the corners are exact points on the table plane, so solvePnP
+gives the observer's pose and a reprojection error to judge it by. Result lands in
+`calib/observer_extrinsics.json`.
 
 **The colour detector false-positives on the real desk.** It fired on a pale patch of the
 paper covering the table during a sweep, and on a yellow bag strap in another view. The cube
