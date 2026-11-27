@@ -153,10 +153,17 @@ class SimRobot:
 
     # -- vision ---------------------------------------------------------
     def _render(self, camera: str) -> np.ndarray:
+        """One frame in BGR, the convention every backend shares.
+
+        MuJoCo renders RGB and OpenCV -- and therefore the real camera, the segmenter and the
+        colour gate -- works in BGR. Converting here means one convention inside the shared
+        controller instead of a per-backend surprise: the yellow gate silently failed in
+        simulation for exactly that reason.
+        """
         rc = self.real_cameras.get(camera)
         if rc is None:
             self.renderer.update_scene(self.data, camera=camera)
-            return self.renderer.render().copy()
+            return self.renderer.render()[:, :, ::-1].copy()
         width, height, fovy = rc.render_geometry()
         cid = self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_CAMERA, camera)
         saved_fovy = float(self.model.cam_fovy[cid])
@@ -171,7 +178,8 @@ class SimRobot:
         ox = min(ox, max(0, width - rc.width))
         oy = min(oy, max(0, height - rc.height))
         cropped = frame[oy : oy + rc.height, ox : ox + rc.width]
-        return rc.apply(cropped) if cropped.shape[:2] == (rc.height, rc.width) else frame
+        out = rc.apply(cropped) if cropped.shape[:2] == (rc.height, rc.width) else frame
+        return out[:, :, ::-1].copy()
 
     def capture_wrist(self) -> np.ndarray | None:
         return self._render(self.wrist_camera)

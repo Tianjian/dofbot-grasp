@@ -13,9 +13,10 @@ import numpy as np
 
 def detect_cube(img: np.ndarray) -> dict | None:
     """Return centroid, area fraction and bbox of the rendered cube, or None."""
-    r = img[:, :, 0].astype(np.int16)
+    # frames arrive in BGR, like every other backend
+    b = img[:, :, 0].astype(np.int16)
     g = img[:, :, 1].astype(np.int16)
-    b = img[:, :, 2].astype(np.int16)
+    r = img[:, :, 2].astype(np.int16)
     mask = (r > 90) & (r > g + 25) & (g > b) & (b < 140)
     ys, xs = np.nonzero(mask)
     if len(xs) < 60:

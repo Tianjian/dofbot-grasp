@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "sim"))
 import grasp_trial as trial  # noqa: E402
 from real_camera import RealCamera  # noqa: E402
 
-from dofbot_grasp.controller import grasp_measured, tip_and_axis  # noqa: E402
+from dofbot_grasp.controller import grasp_task, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
@@ -106,6 +106,9 @@ def main() -> int:
 
     mujoco.mj_step = step_and_capture
     io = SimRobot(model, data)  # rebound per seed below
+    import json
+
+    intr = json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
     try:
         for tag in [t for t in args.seeds.split(",") if t.strip()]:
             idx = int(tag)
@@ -159,9 +162,12 @@ def main() -> int:
                     cid = mujoco.mj_name2id(_model, mujoco.mjtObj.mjOBJ_BODY, "cube")
                     _seen["close"] = _data.xpos[cid].copy()
 
-            res = grasp_measured(
+            res = grasp_task(
                 io,
                 trial.make_detector(),
+                intr=intr,
+                watch_timeout_s=8.0,
+                hold_s=0.1,
                 on_stage=on_stage,
             )
             cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
