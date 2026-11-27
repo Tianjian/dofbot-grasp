@@ -39,6 +39,30 @@ observer camera in a background thread and flags two things the wrist view canno
 motion in the room (someone reaching in) and a camera that has stopped delivering. It aborts
 the run between stages and writes the frames around the alarm to `logs/observer/`.
 
+### Reviewing the monitor after the cube's appearance was clarified
+
+Three faults, all of them false alarms that would have made the monitor unusable on the first
+run rather than dangerous:
+
+* **the cube check counted misses even when it was off.** Segmentation now records whether it
+  actually ran (`cube_checked`); with no seed, a missing centre means nothing.
+* **a still room looked like a dead camera.** Staleness was tested against pixel change, so a
+  quiet scene alarmed after three seconds. It now tests whether frames are arriving.
+* **a camera that stopped returning frames was never noticed at all.** That check lived inside
+  the per-frame path, which silence never reaches. It is now in the worker loop.
+
+And one that is not a false alarm but a trap: `ObserverVision` seeded SAM2 from a yellow blob,
+which can never find this cube from the side, because the sides are white stickers. The seed
+now has to come from the caller.
+
+### Simulation and reality differ here more than anywhere else
+
+The simulated observer renders a plain orange cube on a checkered floor with a flat backdrop.
+The real observer sees a white-stickered cube among papers, a shelf of colourful packaging and
+a chair. Nothing calibrated on the rendered observer view transfers: thresholds, colour ranges
+and blob sizes all came from the real camera instead, and the simulated observer is used only
+to draw the video.
+
 It is deliberately image-space, not a 3-D envelope: the observer's intrinsics are calibrated
 but its extrinsics are not, so it can say "the scene changed" but not "a hand is inside the
 workspace". Thresholds: 4 % of a downsampled grey frame changing by more than 25 levels, on

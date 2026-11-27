@@ -28,6 +28,7 @@ class SemanticState:
 
     available: bool = False
     person: bool = False
+    cube_checked: bool = False  # whether segmentation actually ran
     cube_centre: tuple[float, float] | None = None
     cube_was_at: tuple[float, float] | None = None
     notes: list[str] = field(default_factory=list)
@@ -110,6 +111,7 @@ class ObserverVision:
             # view. The seed has to come from somewhere that knows where the cube is.
             seed = cube_seed
             if seed is not None:
+                st.cube_checked = True
                 try:
                     res = self._sam.predict(
                         frame, points=[[seed[0], seed[1]]], labels=[1], verbose=False

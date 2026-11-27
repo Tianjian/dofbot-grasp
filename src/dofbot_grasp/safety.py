@@ -59,10 +59,10 @@ class ObserverMonitor:
         self._semantic = semantic
         self._cube_missing = 0
         self.semantic_state = None
+        self._last_frame_at = time.time()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._baseline: np.ndarray | None = None
-        self._last_change = time.time()
         self._lock = threading.Lock()
         self._alarm: str | None = None
         self.frames = 0
@@ -106,7 +106,20 @@ class ObserverMonitor:
             frame = self._capture()
             if frame is not None:
                 self._inspect(frame)
+            else:
+                # a camera that stops returning frames never reaches _inspect, so silence has
+                # to be noticed out here or it looks exactly like a healthy quiet room
+                self._check_silence()
             time.sleep(self._interval)
+
+    def _check_silence(self) -> None:
+        if self.frames == 0:
+            return  # never started; not the same as failing
+        if time.time() - self._last_frame_at <= self._stale_seconds:
+            return
+        with self._lock:
+            if self._alarm is None:
+                self._alarm = "observer camera stopped delivering frames"
 
     def check_semantics(self, frame: np.ndarray) -> None:
         """One semantic pass, called by the caller between stages."""
@@ -121,6 +134,9 @@ class ObserverMonitor:
             if not state.available:
                 self._semantic = None
                 return
+            if not state.cube_checked:
+                # the cube check is off (no seed), so a missing centre means nothing
+                return
             if state.cube_centre is None:
                 self._cube_missing += 1
                 if self._cube_missing >= 3 and self._alarm is None:
@@ -133,20 +149,18 @@ class ObserverMonitor:
         grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         grey = cv2.resize(grey, (160, 120), interpolation=cv2.INTER_AREA).astype(np.float32)
         self.frames += 1
+        self._last_frame_at = time.time()
         with self._lock:
             if self._baseline is None:
                 self._baseline = grey
-                self._last_change = time.time()
                 return
             if self.frames < self._warmup:
                 # auto-exposure and auto-white-balance settle over the first frames; alarming
                 # on that would make the monitor useless on a real webcam
                 self._baseline = grey
-                self._last_change = time.time()
                 return
             changed = float(np.mean(np.abs(grey - self._baseline) > 25.0))
             if changed > self._motion_fraction:
-                self._last_change = time.time()
                 # one frame above the line is noise; several in a row is something moving
                 self._strikes += 1
                 if self._strikes >= self._confirm and self._alarm is None:
@@ -156,9 +170,6 @@ class ObserverMonitor:
                 self._strikes = 0
             # the baseline follows slowly, so the arm's own motion is not an alarm
             self._baseline = 0.95 * self._baseline + 0.05 * grey
-            stale = time.time() - self._last_change > self._stale_seconds
-            if stale and self.frames > 5 and self._alarm is None:
-                self._alarm = "observer camera has not changed -- is it still connected?"
 
     def _write_evidence(self, frame: np.ndarray, changed: float) -> None:
         if self._evidence_dir is None:
