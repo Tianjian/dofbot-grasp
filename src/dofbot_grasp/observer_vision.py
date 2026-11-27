@@ -102,7 +102,8 @@ class ObserverVision:
         if self._face is not None:
             try:
                 res = self._face.predict(frame, verbose=False, conf=0.35)
-                st.person = bool(res and len(res[0].boxes) > 0)
+                boxes = res[0].boxes if res else None
+                st.person = bool(boxes is not None and len(boxes) > 0)
             except Exception:
                 st.notes.append("face model failed")
         if self._sam is not None and expect_cube:

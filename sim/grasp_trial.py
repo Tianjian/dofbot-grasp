@@ -54,9 +54,9 @@ def make_detector(prefer_gpu: bool = False):
     SAM2 is available with ``--detector sam2`` where a GPU and torch exist; the CI runner
     has neither, so the default stays the cheap RGB rule the simulator renders for.
 
-    The rendered cube is an unlit orange-brown; ``perception.detect_cube`` thresholds HSV
-    saturation for the real camera and does not fire on it, so the simulator keeps its own
-    simple rule.
+    The rendered cube is unlit and its colour is exact, so the cheap rule is the right tool for
+    rendered frames -- and it keeps the CI gate runnable without a GPU. ``--detector sam2`` runs
+    the hardware's own segmenter instead, which is how the two paths are checked for parity.
     """
     if prefer_gpu:
         from dofbot_grasp.tracker import make_detector as front_end

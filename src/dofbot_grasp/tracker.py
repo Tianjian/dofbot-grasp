@@ -84,19 +84,15 @@ class SamCubeDetector:
             score = fill + 0.4 * min(area / (0.25 * frame_area), 1.0)
             if best is None or score > best[0]:
                 ys, xs = np.nonzero(binary)
-                best = (
-                    score,
-                    float(xs.mean()),
-                    float(ys.mean()),
-                    area,
-                    np.column_stack([ys, xs]).astype(np.int32),
-                )
+                best = (score, float(xs.mean()), float(ys.mean()), area, binary)
         if best is None:
             return None
-        _score, u, v, area, points = best
+        _score, u, v, area, mask = best
+        # A full-frame boolean mask, not a point list: the 30 mm prior is fitted by overlapping
+        # the projected cube with this array, so its shape has to be the image's.
         return {
             "centre": np.array([u, v]),
-            "mask": points,
+            "mask": mask,
             "area": area,
             "width_px": float(np.sqrt(area)),
         }
