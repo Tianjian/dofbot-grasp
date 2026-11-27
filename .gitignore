@@ -24,3 +24,6 @@ frames/
 
 # Model weights (fetch with `make weights` or on first run; see models/README.md)
 models/*.pt
+
+# Runtime output: recordings, evidence frames and alarms. Curated evidence lives in sim/.
+logs/

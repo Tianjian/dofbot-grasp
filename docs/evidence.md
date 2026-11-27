@@ -61,3 +61,13 @@ MUJOCO_GL=egl python sim/record_controller.py --seeds 0,1,2
 # the arm, recording to logs/observer/run_<stamp>.mp4
 python scripts/run_ibvs_real.py
 ```
+
+## What is not in the repository
+
+`logs/` holds the recordings and alarm frames from every run, and is ignored: it is runtime
+output, it grows by megabytes a run, and the curated evidence above already preserves what
+matters. A fresh run writes there again.
+
+The pack is larger than the working tree because earlier commits tracked that directory before
+it was ignored. Removing those objects would mean rewriting published history, which is not
+worth doing for a repository whose history is the record of how the controller was arrived at.
