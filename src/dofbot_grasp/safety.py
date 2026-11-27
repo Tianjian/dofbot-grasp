@@ -42,6 +42,7 @@ class ObserverMonitor:
         stale_seconds: float = 3.0,
         evidence_dir: Path | None = None,
         interval_s: float = 0.1,
+        semantic: object | None = None,
     ) -> None:
         self._capture = capture
         self._motion_fraction = motion_fraction
@@ -51,6 +52,13 @@ class ObserverMonitor:
         self._stale_seconds = stale_seconds
         self._interval = interval_s
         self._evidence_dir = evidence_dir
+        # GPU semantic probe (dofbot_grasp.observer_vision.ObserverVision). Called from the
+        # caller's thread between stages, never from the worker: CUDA inference on the worker
+        # stalled the whole process, and at about a second a pass it belongs at stage
+        # boundaries anyway, not in a 10 Hz loop.
+        self._semantic = semantic
+        self._cube_missing = 0
+        self.semantic_state = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._baseline: np.ndarray | None = None
@@ -99,6 +107,27 @@ class ObserverMonitor:
             if frame is not None:
                 self._inspect(frame)
             time.sleep(self._interval)
+
+    def check_semantics(self, frame: np.ndarray) -> None:
+        """One semantic pass, called by the caller between stages."""
+        if self._semantic is None:
+            return
+        try:
+            state = self._semantic.check(frame)  # type: ignore[attr-defined]
+        except Exception:
+            return
+        with self._lock:
+            self.semantic_state = state
+            if not state.available:
+                self._semantic = None
+                return
+            if state.cube_centre is None:
+                self._cube_missing += 1
+                if self._cube_missing >= 3 and self._alarm is None:
+                    self._alarm = "the cube is no longer visible in the observer view"
+                    self._write_evidence(frame, 0.0)
+            else:
+                self._cube_missing = 0
 
     def _inspect(self, frame: np.ndarray) -> None:
         grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

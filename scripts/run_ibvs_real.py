@@ -119,10 +119,36 @@ def main() -> int:
         if not args.measure_only:
             from dofbot_grasp.safety import ObserverMonitor, SafetyAbort
 
+            semantic = None
+            try:
+                from dofbot_grasp.observer_vision import ObserverVision
+
+                semantic = ObserverVision(ROOT)
+                print(
+                    "observer semantics:",
+                    "GPU (face + cube segmentation)"
+                    if semantic.state.available
+                    else "unavailable, pixel check only",
+                )
+            except Exception as exc:  # no torch, no GPU, no matter
+                print(f"observer semantics unavailable ({type(exc).__name__}); pixel check only")
             monitor = ObserverMonitor(
-                robot.capture_observer, evidence_dir=ROOT / "logs" / "observer"
+                robot.capture_observer,
+                evidence_dir=ROOT / "logs" / "observer",
+                semantic=semantic,
             )
             monitor.start()
+
+            # the GPU pass runs here, between stages, not in the monitor thread
+            def _guard() -> None:
+                monitor.raise_if_alarmed()
+                if semantic is not None and semantic.state.available:
+                    frame = robot.capture_observer()
+                    if frame is not None:
+                        monitor.check_semantics(frame)
+                    monitor.raise_if_alarmed()
+
+            abort_check = _guard
             print("observer monitor running; any alarm aborts before the next stage")
 
         try:
@@ -130,7 +156,7 @@ def main() -> int:
                 robot,
                 detector,
                 log=print,
-                abort_check=monitor.raise_if_alarmed if monitor else None,
+                abort_check=abort_check if monitor else None,
                 measure_only=args.measure_only,
             )
         except SafetyAbort as exc:
