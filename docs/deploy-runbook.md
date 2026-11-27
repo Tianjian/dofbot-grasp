@@ -217,10 +217,10 @@ EOF
 # 4) 手眼标定（9 点）：当前需按 §5 手工采点 + 拟合，产出 T_cam_base 写入 config
 
 # 5) 干跑：完整状态机，但不夹（把 grasp 夹持角设成张开角）
-python -m dofbot_grasp.cli real --config config/dofbot.yaml --json
+python scripts/run_ibvs_real.py --measure-only   # the CLI was removed with the colour detector
 
 # 6) 正式抓取
-python -m dofbot_grasp.cli real --config config/dofbot.yaml
+python scripts/run_ibvs_real.py
 ```
 
 标定与自检应当尽快固化成子命令（`selftest`/`calibrate`），本文只保证顺序与验收点。

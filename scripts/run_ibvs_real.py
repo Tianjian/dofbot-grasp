@@ -119,6 +119,30 @@ def main() -> int:
             print("no pose gave a usable fit; refusing to move on a guess")
             return 1
 
+        # Independent check: the observer sees the same cube, and although its pose is not
+        # calibrated, its apparent size gives a distance. If that disagrees badly with the
+        # wrist camera's position, one of them is wrong and the run should not continue.
+        from dofbot_grasp.observer_vision import cube_side_px, distance_from_side_px
+
+        obs_frame = robot.capture_observer()
+        side = cube_side_px(obs_frame) if obs_frame is not None else None
+        obs_intr = json.loads((ROOT / CAMERAS.observer_intrinsics).read_text())
+        obs_dist = distance_from_side_px(side, obs_intr) if side else None
+        if obs_dist is not None:
+            here = np.array([measured["x"], measured["y"], 0.015])
+            observer_at = np.array(obs_intr.get("position_m", [0.41, 0.35, 0.025]))
+            expect = float(np.linalg.norm(here - observer_at))
+            ratio = expect / obs_dist
+            verdict = "agrees" if 0.6 < ratio < 1.7 else "DISAGREES"
+            print(
+                f"observer check: cube {side:.0f} px wide -> {obs_dist * 1000:.0f} mm from the "
+                f"observer; the wrist measurement implies {expect * 1000:.0f} mm ({verdict})"
+            )
+            if verdict == "DISAGREES":
+                print("  one of the two estimates is wrong -- move the cube and re-measure")
+        else:
+            print("observer check: cube not measurable in the observer view")
+
         if args.dry_run:
             print("dry run: nothing moved")
             return 0

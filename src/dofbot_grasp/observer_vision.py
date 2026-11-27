@@ -127,3 +127,46 @@ class ObserverVision:
                     st.notes.append("cube segmentation failed")
         self.state = st
         return st
+
+
+def cube_side_px(frame: np.ndarray, *, roi_top_fraction: float = 0.55) -> float | None:
+    """How wide the cube looks in the observer frame, in pixels.
+
+    Image-space only, deliberately: the observer's intrinsics are calibrated but its extrinsics
+    are not, so a pixel cannot be turned into a base-frame point. Its apparent size can still
+    be turned into a *distance*, because the cube's edge is a known 30 mm -- and that is enough
+    to check a position measured by another camera for gross disagreement.
+    """
+    import cv2
+
+    if frame is None or frame.size == 0:
+        return None
+    h, w = frame.shape[:2]
+    roi = frame[int(roi_top_fraction * h) :, :]
+    grey = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(grey, (5, 5), 0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best: float | None = None
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if not 400.0 < area < 20000.0:
+            continue
+        x, y, bw, bh = cv2.boundingRect(contour)
+        if bh == 0:
+            continue
+        aspect = bw / float(bh)
+        if not 0.55 < aspect < 1.9:  # a cube face seen from the side stays roughly square
+            continue
+        side = (bw + bh) / 2.0
+        if side > (best or 0.0):
+            best = float(side)
+    return best
+
+
+def distance_from_side_px(side_px: float, intr: dict, cube_edge_m: float = 0.030) -> float | None:
+    """Distance implied by the cube's apparent width, or None if the input is nonsense."""
+    if side_px is None or side_px <= 1.0:
+        return None
+    return float(cube_edge_m * intr["fx"] / side_px)

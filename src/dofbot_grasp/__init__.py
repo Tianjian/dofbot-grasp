@@ -1,18 +1,17 @@
 """DOFBOT SE grasp-control package.
 
-Pure control stack for the 5-DOF DOFBOT SE desktop arm: URDF kinematics,
-classical cube perception, a servo-bus abstraction (sim + real serial) and the
-``home -> search -> align -> approach -> grasp -> lift -> verify`` grasp
-pipeline.
+Control stack for the 5-DOF DOFBOT SE desktop arm: URDF kinematics, a servo-bus abstraction
+(simulation and real serial), a GPU segmenter that finds the cube, and the measure-once then
+grasp-by-IK sequence in :mod:`dofbot_grasp.controller`.
 
-Importing the package only requires NumPy: MuJoCo, OpenCV, pyserial and PyYAML
-are imported lazily by the concrete sim/real/CLI adapters.
+Importing the package only requires NumPy: MuJoCo, OpenCV, pyserial and ultralytics are
+imported lazily by the concrete sim/real adapters and the segmenter.
 
 See ``docs/controller-architecture.md`` for the fixed sim/real contract and
-``dofbot_grasp/docs/control-api.md`` for the module map and config keys.
+``docs/control-api.md`` for the module map.
 """
 
-from . import bus, camera, kinematics, perception, pipeline
+from . import arm, bus, camera, kinematics, safety, tracker
 from .bus import SerialBus, ServoBus, SimBus
 from .camera import Intrinsics, SimCamera, UsbCamera, WristCamera, intrinsics_from_fovy
 from .kinematics import (
@@ -26,39 +25,31 @@ from .kinematics import (
     joint_deg_to_servo,
     servo_to_joint_deg,
 )
-from .perception import CubeObservation, DetectConfig, detect_cube
-from .pipeline import GraspPipeline, PipelineConfig, PipelineResult, StepRecord
 
 __all__ = [
     "HOME_JOINTS_RAD",
     "JOINT_LIMITS",
     "N_JOINTS",
     "TCP_OFFSET_LINK5_M",
-    "CubeObservation",
-    "DetectConfig",
-    "GraspPipeline",
     "Intrinsics",
-    "PipelineConfig",
-    "PipelineResult",
     "SerialBus",
     "ServoBus",
     "SimBus",
     "SimCamera",
-    "StepRecord",
     "UsbCamera",
     "WristCamera",
+    "arm",
     "bus",
     "camera",
-    "detect_cube",
     "forward",
     "forward_tcp",
     "intrinsics_from_fovy",
     "inverse",
     "joint_deg_to_servo",
     "kinematics",
-    "perception",
-    "pipeline",
+    "safety",
     "servo_to_joint_deg",
+    "tracker",
 ]
 
 __version__ = "0.1.0"

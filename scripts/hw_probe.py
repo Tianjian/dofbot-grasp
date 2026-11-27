@@ -96,11 +96,19 @@ def cmd_probe(args: argparse.Namespace) -> int:
             _cv2.imwrite(args.save, frame)
             print(f"frame saved     : {args.save}")
         try:
-            from dofbot_grasp.perception import detect_cube
+            from dofbot_grasp.tracker import make_detector
 
-            obs = detect_cube(frame)
-            out["cube"] = None if obs is None else obs.as_dict()
-            print(f"cube detection  : {'none' if obs is None else obs.as_dict()}")
+            found = make_detector()(frame)
+            summary = (
+                None
+                if found is None
+                else {
+                    "centre_px": [round(float(c), 1) for c in found["centre"]],
+                    "area_px": int(found["area"]),
+                }
+            )
+            out["cube"] = summary
+            print(f"cube detection  : {summary}")
         except Exception as exc:  # pragma: no cover - exploratory
             print(f"cube detection  : error {type(exc).__name__}: {exc}")
     print(json.dumps(out, indent=2))

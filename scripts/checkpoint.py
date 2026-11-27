@@ -31,7 +31,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from dofbot_grasp.perception import detect_cube  # noqa: E402
+from dofbot_grasp.tracker import make_detector  # noqa: E402
 
 
 def capture(device: str) -> np.ndarray | None:
@@ -43,30 +43,21 @@ def capture(device: str) -> np.ndarray | None:
     return frame if ok else None
 
 
-def annotate(frame: np.ndarray, obs) -> np.ndarray:
-    out = frame.copy()
-    if obs is not None:
-        x, y, w, h = obs.bbox
-        cv2.rectangle(out, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        cv2.putText(
-            out,
-            f"pre-filter w={obs.width_px:.0f}px d={obs.distance_m * 100:.1f}cm",
-            (x, max(14, y - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 255),
-            1,
-        )
-    cv2.putText(
-        out,
-        "UNVERIFIED: confirm with the vision gate",
-        (8, out.shape[0] - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (0, 200, 255),
-        1,
-    )
-    return out
+def annotate(frame, found):
+    """Draw the segmenter's answer on the frame."""
+    import numpy as np
+
+    vis = frame.copy()
+    if not found:
+        return vis
+    mask = found.get("mask")
+    if mask is not None and len(mask):
+        vis[mask[:, 0], mask[:, 1]] = (
+            0.65 * vis[mask[:, 0], mask[:, 1]] + 0.35 * np.array([0, 0, 255])
+        ).astype(np.uint8)
+    u, v = (int(round(float(c))) for c in found["centre"])
+    cv2.drawMarker(vis, (u, v), (0, 255, 255), cv2.MARKER_CROSS, 24, 2)
+    return vis
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     if wrist is None:
         print(f"error: could not read {args.wrist}", file=sys.stderr)
         return 2
-    obs = detect_cube(wrist, white_balance=True, min_blob_saturation=140.0)
+    obs = make_detector()(wrist)
     raw_path = out_dir / f"{base}_wrist.png"
     ann_path = out_dir / f"{base}_wrist_annotated.png"
     cv2.imwrite(str(raw_path), wrist)

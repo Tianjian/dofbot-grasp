@@ -1,3 +1,8 @@
+> **Superseded.** The pipeline and CLI this document describes were built on the classical
+> colour detector and have been removed with it. The live control path is
+> `controller.grasp_measured`, driven by `scripts/run_ibvs_real.py` on hardware and by
+> `sim/grasp_trial.py` in the CI gate. Kept for the API notes that still apply.
+
 # DOFBOT SE grasp control API
 
 Control stack for the 5-DOF DOFBOT SE desktop arm, implementing the fixed

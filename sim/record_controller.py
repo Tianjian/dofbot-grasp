@@ -21,10 +21,10 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "sim"))
 
 import grasp_trial as trial  # noqa: E402
+from real_camera import RealCamera  # noqa: E402
 
 from dofbot_grasp.controller import grasp_measured, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SimRobot  # noqa: E402
-from real_camera import RealCamera  # noqa: E402
 
 EVERY = 100  # sim steps per captured frame (dt = 2 ms -> 0.2 s)
 FPS = 30.0  # 0.2 s per frame at 30 fps = 6x real time (2x the previous cut)

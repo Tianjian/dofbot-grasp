@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from dofbot_grasp.safety import ObserverMonitor
 
@@ -95,3 +97,36 @@ def test_cube_check_off_does_not_alarm():
     for _ in range(5):
         monitor.check_semantics(_frame())
     assert monitor.alarm is None
+
+
+def test_apparent_size_gives_a_distance():
+    """A 30 mm cube one metre from a 640 px-focal camera is ~19 px wide."""
+    from dofbot_grasp.observer_vision import distance_from_side_px
+
+    intr = {"fx": 640.0}
+    assert distance_from_side_px(19.2, intr) == pytest.approx(1.0, abs=0.02)
+    assert distance_from_side_px(57.0, intr) == pytest.approx(0.337, abs=0.01)
+    assert distance_from_side_px(None, intr) is None
+
+
+def test_the_real_cube_is_detected():
+    """The pale-yellow target, on a desk of blue-lined paper, at 66 mm.
+
+    Kept as a real frame because the failure it guards against was not a logic error: the old
+    saturation gate sat one unit above the cube's own measured value, so detection depended on
+    the light. Segmentation replaced the threshold, and this asserts the segmenter still finds
+    the cube the threshold used to miss.
+    """
+    import cv2
+    import pytest
+
+    pytest.importorskip("ultralytics", reason="the segmenter needs the GPU stack")
+    from dofbot_grasp.tracker import make_detector
+
+    path = Path(__file__).parent / "data" / "real_cube_wrist.png"
+    frame = cv2.imread(str(path))
+    assert frame is not None
+    found = make_detector()(frame)
+    assert found is not None
+    assert found["centre"][0] == pytest.approx(240, abs=40)
+    assert found["centre"][1] == pytest.approx(194, abs=40)
