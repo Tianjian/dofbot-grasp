@@ -172,7 +172,7 @@ def main() -> int:
                 else 0.0
             )
             # lifting is the success, per the user; drift is reported, not gated
-            res["ok"] = bool(res.get("ok") and lifted > 12)   # clear of the table
+            res["ok"] = bool(res.get("ok") and lifted > 12)  # clear of the table
             res["drift_mm"] = round(drift, 1)
             state["phase"] = f"done ok={res.get('ok')} lift={lifted:+.0f} drift={drift:.0f}mm"
             # hold the final state for a moment so the clip ends on the result instead of

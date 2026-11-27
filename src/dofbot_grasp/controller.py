@@ -90,7 +90,9 @@ def backproject_to_table(
     dist = np.array(intr["dist"], float).reshape(-1, 1)
     und = cv2.undistortPoints(np.array([[[u, v]]], np.float32), Kmtx, dist).reshape(2)
     C, R = camera_pose(pose)
-    ray = R @ np.array([und[0], und[1], 1.0])
+    # MuJoCo's convention (which the renderer uses, and which camera_pose now returns):
+    # x right, y up, looking along -z. OpenCV's und[1] is measured downwards.
+    ray = R @ np.array([und[0], -und[1], -1.0])
     if abs(ray[2]) < 1e-6:
         return None
     plane = GRASP.table_z_m if z_plane is None else z_plane

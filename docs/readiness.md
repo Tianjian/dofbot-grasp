@@ -28,12 +28,14 @@ wrist frame, `params.MOUNT` back-projects the cube onto the table while the othe
 produces no intersection at all -- its ray runs parallel to the table. That file and the
 hand-eye script that generated it are **deleted**; `params.MOUNT` is the only definition.
 
-**2. The motion phases are not connected.** `scripts/run_ibvs_real.py` has the bus wrapper,
-the geometry, the guards and a `--dry-run` planner, but nothing runs `controller.grasp`
-against the arm. There is no code path that actually performs a grasp on hardware.
+**2. (resolved) The motion phases were not connected.** `scripts/run_ibvs_real.py` now builds
+`SerialRobot`, checks that the cube is visible, and hands over to
+`controller.grasp_measured` -- the same sequence the simulation runs. Its duplicated geometry
+is gone: the bus wrapper moved into `dofbot_grasp.arm` and the camera maths now comes from
+the controller, so there is one implementation of each.
 
-**3. There is no observer safety monitor.** The observer camera opens but no code reads it.
-The simulation has no such need; the arm does.
+**3. There is still no observer safety monitor.** The observer camera opens and can capture,
+but nothing watches it during a run. This remains the open safety item for the first session.
 
 ## Worth knowing before the first run
 
