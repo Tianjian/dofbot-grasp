@@ -132,9 +132,18 @@ def align_jaws_to_yaw(io, yaw_rad: float) -> float:
     return best[1]
 
 
-def _fit_once(io, detect, pose=None):
-    """One frame -> the fitted cube (x, y, yaw), or None."""
-    det = detect(io.capture_wrist())
+def _fit_once(io, detect, pose=None, *, retries: int = 1):
+    """One frame -> the fitted cube (x, y, yaw), or None.
+
+    Retries once. Observed on hardware: the first detection after a second camera thread
+    starts comes back empty and the next one is fine, so a single retry turns a wasted run
+    into a normal one. A measurement costs a second; a failed run costs the whole session.
+    """
+    det = None
+    for _attempt in range(retries + 1):
+        det = detect(io.capture_wrist())
+        if det is not None and det.get("mask") is not None:
+            break
     if det is None or det.get("mask") is None:
         return None
     p0 = pose or io.read_joints()
@@ -353,9 +362,9 @@ def observer_sweep(
     the area the arm can work in.
     """
     candidates: list[tuple[float, float, dict[int, float]]] = []
-    for j1 in range(45, 136, 15):
-        for j2 in range(70, 111, 5):
-            for j3 in range(0, 51, 10):
+    for j1 in range(40, 141, 10):
+        for j2 in range(65, 111, 5):
+            for j3 in range(0, 51, 5):
                 j4 = j2 + j3 - 90.0
                 if not 0.0 <= j4 <= 180.0:
                     continue
@@ -372,16 +381,23 @@ def observer_sweep(
                 candidates.append((r, float(np.arctan2(hit[1], hit[0])), pose))
     if not candidates:
         return []
-    # greedy coverage: take the pose aimed closest to each of a ring of target bearings
+    # Tile the reachable annulus: a few radii against several bearings, one pose per cell,
+    # nearest to the cell's centre. A handful of hand-picked poses leaves holes big enough for
+    # the cube to hide in, and the miss shows up later as "no pose gave a usable fit".
+    radii = np.linspace(min_radius_m + 0.04, max_radius_m - 0.03, 3)
+    bearings = np.linspace(-np.pi, np.pi, 6, endpoint=False)
     chosen: list[dict[int, float]] = []
-    for target_r in (min_radius_m + 0.06, max_radius_m - 0.05):
-        for k in range(4):
-            bearing = -np.pi + k * np.pi / 2
-            best = min(candidates, key=lambda c: abs(c[0] - target_r) + 0.25 * abs(c[1] - bearing))
+    for target_r in radii:
+        for bearing in bearings:
+            best = min(
+                candidates,
+                key=lambda c: abs(c[0] - target_r) + 0.15 * abs(c[1] - bearing),
+            )
             if best[2] not in chosen:
                 chosen.append(best[2])
             if len(chosen) >= limit:
                 return chosen
+    return chosen
     return chosen
 
 

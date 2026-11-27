@@ -43,6 +43,8 @@ class ObserverMonitor:
         evidence_dir: Path | None = None,
         interval_s: float = 0.1,
         semantic: object | None = None,
+        record_path: Path | None = None,
+        record_fps: float = 10.0,
     ) -> None:
         self._capture = capture
         self._motion_fraction = motion_fraction
@@ -60,6 +62,13 @@ class ObserverMonitor:
         self._cube_missing = 0
         self.semantic_state = None
         self._last_frame_at = time.time()
+        # Recording rides on the capture thread that already reads this camera. A second
+        # reader on the same device fights the first one, and the review afterwards wants the
+        # frames the monitor itself judged.
+        self._record_path = record_path
+        self._record_fps = record_fps
+        self._writer: object | None = None
+        self._stage_label = "idle"
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._baseline: np.ndarray | None = None
@@ -80,6 +89,9 @@ class ObserverMonitor:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
+        if self._writer is not None:
+            self._writer.release()  # type: ignore[attr-defined]
+            self._writer = None
 
     def __enter__(self) -> ObserverMonitor:
         self.start()
@@ -101,10 +113,42 @@ class ObserverMonitor:
             raise SafetyAbort(reason)
 
     # -- worker ---------------------------------------------------------
+    def annotate(self, label: str) -> None:
+        """Set the line burnt into the recording, so a review knows which stage it is seeing."""
+        self._stage_label = label
+
+    def _write_frame(self, frame: np.ndarray) -> None:
+        import cv2
+
+        if self._writer is None:
+            if self._record_path is None:
+                return
+            self._record_path.parent.mkdir(parents=True, exist_ok=True)
+            h, w = frame.shape[:2]
+            self._writer = cv2.VideoWriter(
+                str(self._record_path),
+                cv2.VideoWriter.fourcc(*"mp4v"),  # type: ignore[attr-defined]
+                self._record_fps,
+                (w, h),
+            )
+        stamped = frame.copy()
+        cv2.putText(
+            stamped,
+            f"{time.strftime('%H:%M:%S')}  {self._stage_label}",
+            (8, 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        self._writer.write(stamped)  # type: ignore[attr-defined]
+
     def _run(self) -> None:
         while not self._stop.is_set():
             frame = self._capture()
             if frame is not None:
+                self._write_frame(frame)
                 self._inspect(frame)
             else:
                 # a camera that stops returning frames never reaches _inspect, so silence has

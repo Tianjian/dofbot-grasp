@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -40,11 +41,12 @@ from dofbot_grasp.params import CAMERAS, GRASP, JOINTS  # noqa: E402
 from dofbot_grasp.tracker import make_detector  # noqa: E402
 
 
-def find_cube(robot, detector) -> dict | None:
+def find_cube(robot, detector, *, force_sweep: bool = False) -> dict | None:
     """The view that frames the cube best, sweeping if it is not already in sight."""
-    seen = detector(robot.capture_wrist())
-    if seen is not None:
-        return seen
+    if not force_sweep:
+        seen = detector(robot.capture_wrist())
+        if seen is not None:
+            return seen
     print("cube not visible from here; sweeping where the camera looks")
     best = None
     for cand in observer_sweep():
@@ -83,6 +85,34 @@ def main() -> int:
     robot = SerialRobot()
     detector = make_detector()
     print(f"detector: {getattr(detector, 'name', 'colour')}")
+
+    monitor = None
+    semantic = None
+    if not args.dry_run:
+        from dofbot_grasp.safety import ObserverMonitor
+
+        try:
+            from dofbot_grasp.observer_vision import ObserverVision
+
+            semantic = ObserverVision(ROOT)
+            print(
+                "observer semantics:",
+                "GPU" if semantic.state.available else "unavailable, pixel check only",
+            )
+        except Exception as exc:
+            print(f"observer semantics unavailable ({type(exc).__name__})")
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        record_path = ROOT / "logs" / "observer" / f"run_{stamp}.mp4"
+        monitor = ObserverMonitor(
+            robot.capture_observer,
+            evidence_dir=ROOT / "logs" / "observer",
+            semantic=semantic,
+            record_path=record_path,
+        )
+        monitor.start()
+        # Recording starts here, before anything moves: most useful reviews are of the runs
+        # that failed before the grasp, and those never reached the old start point.
+        print(f"recording this run to {record_path}")
     try:
         pose = robot.read_joints()
         tip, axis = tip_and_axis(pose)
@@ -90,11 +120,23 @@ def main() -> int:
         print("fingertip (mm):", np.round(tip * 1000, 0), " tool axis:", np.round(axis, 2))
 
         det = find_cube(robot, detector)
-        if det is None:
-            print("no pose saw the cube -- put it where the arm can reach it")
+        rough = None
+        if det is not None:
+            rough = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
+        if det is not None and rough is None:
+            # A detection from a parked pose can be anything warm-coloured: if its ray does
+            # not even reach the table, it is not the cube, so sweep instead of trusting it.
+            print("that detection does not land on the table; sweeping instead")
+            det = find_cube(robot, detector, force_sweep=True)
+            rough = (
+                None
+                if det is None
+                else robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
+            )
+        if det is None or rough is None:
+            print("no pose saw the cube on the table -- put it where the arm can reach it")
             return 1
         pose = robot.read_joints()
-        rough = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
         cam_c, _ = camera_pose(pose)
         print(
             f"cube pixel {tuple(round(v) for v in det['centre'])}, "
@@ -181,8 +223,11 @@ def main() -> int:
                     monitor.check_semantics(frame)
                 monitor.raise_if_alarmed()
 
+        def stage(name: str) -> None:
+            monitor.annotate(name)  # burnt into the video, for the review afterwards
+
         try:
-            result = grasp_measured(robot, detector, log=print, abort_check=guard)
+            result = grasp_measured(robot, detector, log=print, abort_check=guard, on_stage=stage)
         except SafetyAbort as exc:
             print(f"ABORTED by the observer monitor: {exc}")
             return 3
@@ -193,6 +238,9 @@ def main() -> int:
             print("observer alarm during the run:", monitor.alarm)
         return 0 if result.get("ok") else 1
     finally:
+        if monitor is not None:
+            monitor.stop()
+            print(f"recording stopped: {monitor._record_path}")
         robot.close()
 
 

@@ -77,6 +77,17 @@ camera (no false alarms over four seconds) and against synthetic motion (alarms)
 * the fingers are in frame at the task pose, which is what moved the model to thin jaws;
 * the arm is parked at `(90, 90, 90, 90, 135)` with the jaws open (`~20 deg`).
 
+## Every run is filmed
+
+`scripts/run_ibvs_real.py` records the observer camera for the whole run to
+`logs/observer/run_<stamp>.mp4` (10 fps, timestamp and stage label burnt in). Recording starts
+before anything moves: the most useful review is usually of a run that failed early, and an
+earlier version only started the camera at the grasp stage, which is precisely when a failed
+run never gets there.
+
+The monitor's capture thread does the recording. A second reader on the same device fights the
+first one, and the frames a review wants are the ones the monitor itself judged.
+
 ## Modes
 
 ```bash
