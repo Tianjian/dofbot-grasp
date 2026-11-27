@@ -50,7 +50,7 @@ def find_cube(robot, detector, *, force_sweep: bool = False) -> dict | None:
     print("cube not visible from here; sweeping where the camera looks")
     best = None
     for cand in observer_sweep():
-        robot.command(cand, gripper=JOINTS.gripper_open_deg)
+        robot.command(cand, gripper=0.0)
         seen = detector(robot.capture_wrist())
         if seen is None:
             continue
@@ -152,7 +152,7 @@ def main() -> int:
         # can also reach it, and keep the first whose fit is good enough to act on.
         measured = None
         for cand in search_poses(intr, (float(rough[0]), float(rough[1])), limit=8):
-            robot.command(cand, gripper=JOINTS.gripper_open_deg)
+            robot.command(cand, gripper=0.0)
             measured = measure_cube(robot, detector, log=print)
             if measured is not None:
                 print(f"measured from { {k: round(v) for k, v in cand.items()} }")

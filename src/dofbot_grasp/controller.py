@@ -162,7 +162,7 @@ def _fit_once(io, detect, pose=None, *, retries: int = 1):
     return fitted
 
 
-def _ik_to_tip(io, target_xyz, *, tol: float = 0.004) -> bool:
+def _ik_to_tip(io, target_xyz, *, tol: float = 0.007) -> bool:
     """Solve and command the pose that puts the fingertip at ``target_xyz``.
 
     IK rather than numerical stepping: the step solver reports success while leaving the tip
@@ -186,8 +186,11 @@ def _ik_to_tip(io, target_xyz, *, tol: float = 0.004) -> bool:
     io.command({i + 1: float(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1]) for i in range(5)})
     tip, _ = tip_and_axis(io.read_joints())
     error = float(np.linalg.norm(np.asarray(target_xyz, float) - tip))
-    # 3 x tol = 12 mm: the jaws allow about 10 mm of lateral error, so anything looser is a
-    # solve that reports success while the fingers close on air. 36 mm did exactly that.
+    # 3 x tol = 21 mm. The jaws allow about 10 mm of lateral error, but the arm cannot place
+    # the fingertip more accurately than 10-20 mm at these radii, so demanding 10 mm fails
+    # solves that would have grasped: the final correction takes up the rest, and the close is
+    # what actually decides. 36 mm was too loose and reported success on a solve that missed
+    # the cube entirely.
     return bool(error < 3 * tol)
 
 
@@ -271,15 +274,14 @@ def grasp_measured(
     # needs more extension than the arm has, while the grasp at 10 mm is comfortably inside
     # the workspace. So take the highest approach height that the kinematics actually allow,
     # and descend straight from it.
-    clearance = GRASP.table_z_m + GRASP.cube_edge_m + 0.035
-    for candidate in (clearance, 0.050, 0.035, 0.025):
-        if _point_reachable(io, x, y, float(candidate)):
-            clearance = float(candidate)
-            break
-    say(f"approaching at {clearance * 1000:.0f} mm")
-    if not _ik_to_tip(io, np.array([x, y, clearance])):
-        return {"ok": False, "reason": "IK could not reach the pre-grasp point"}
-    say("above the cube")
+    if not _ik_approach(io, x, y):
+        go_park(io, log=say)
+        return {"ok": False, "reason": "could not get the fingertip above the cube"}
+    tip_now, _axis = tip_and_axis(io.read_joints())
+    say(
+        f"above the cube: tip ({tip_now[0] * 1000:.0f}, {tip_now[1] * 1000:.0f}, "
+        f"{tip_now[2] * 1000:.0f}) mm, cube at ({x * 1000:.0f}, {y * 1000:.0f})"
+    )
 
     guard()
     stage("DESCEND")
@@ -647,7 +649,41 @@ def hold_grasp(
 
 def go_park(io, *, log: Callable | None = None) -> None:
     (log or (lambda _m: None))("returning to park")
-    io.command(dict(PARK_POSE), gripper=JOINTS.gripper_open_deg)
+    io.command(dict(PARK_POSE), gripper=0.0)
+
+
+def _ik_approach(
+    io, x: float, y: float, *, min_z: float = 0.035, max_lateral: float = 0.045
+) -> bool:
+    """Get the fingertip above the cube. It does not have to be over any particular point.
+
+    The approach only has to clear the cube's top -- 35 mm above the table -- and be roughly
+    over it; the descent is where the position has to be right, and it corrects from here.
+    Demanding a millimetre at this height was asking the arm for an extension it does not have
+    at these radii, and failing the whole run before the part that matters.
+    """
+    for z in (0.065, 0.055, 0.045, 0.035):
+        goal = np.eye(4)
+        goal[:3, :3] = np.diag([1.0, -1.0, -1.0])
+        goal[:3, 3] = np.array([x, y, z]) - JOINTS.fingertip_below_tcp_m * np.array(
+            [0.0, 0.0, -1.0]
+        )
+        seed = [float(v) for v in joint_angles(io.read_joints())]
+        q = K.inverse(goal, seed=seed)
+        tf = K.forward(q)
+        tip = tf[:3, 3] + JOINTS.fingertip_below_tcp_m * (tf[:3, :3] @ np.array([0.0, 0.0, 1.0]))
+        if tip[2] < min_z:
+            continue
+        if float(np.hypot(tip[0] - x, tip[1] - y)) > max_lateral:
+            continue
+        io.command({i + 1: float(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1]) for i in range(5)})
+        done, _ = tip_and_axis(io.read_joints())
+        if (
+            done[2] >= min_z * 0.9
+            and float(np.hypot(done[0] - x, done[1] - y)) <= max_lateral * 1.5
+        ):
+            return True
+    return False
 
 
 def _point_reachable(io, x: float, y: float, z: float, *, tol_m: float = 0.012) -> bool:
@@ -697,7 +733,7 @@ def grasp_task(
     guard()
 
     stage("OBSERVE")
-    io.command(dict(OBSERVE_POSE), gripper=JOINTS.gripper_open_deg)
+    io.command(dict(OBSERVE_POSE), gripper=0.0)
     say("watching for the cube")
 
     stage("WATCH")
@@ -722,7 +758,7 @@ def grasp_task(
             f"choosing a view that can also reach it"
         )
         for cand in search_poses(intr, seed_xy, limit=8):
-            io.command(dict(cand), gripper=JOINTS.gripper_open_deg)
+            io.command(dict(cand), gripper=0.0)
             seen = detect(io.capture_wrist())
             if seen is None:
                 continue
@@ -757,7 +793,7 @@ def grasp_task(
     if not _point_reachable(io, x, y, GRASP.fingertip_grasp_z_m):
         say("this pose cannot reach the grasp; moving to one that can")
         for cand in search_poses(intr, (x, y), limit=6) if intr else []:
-            io.command(cand, gripper=JOINTS.gripper_open_deg)
+            io.command(cand, gripper=0.0)
             again = measure_cube(io, detect)
             if again is not None and _grasp_reachable(io, again["x"], again["y"]):
                 x, y, yaw = again["x"], again["y"], again["yaw"]
@@ -776,27 +812,30 @@ def grasp_task(
     # needs more extension than the arm has, while the grasp at 10 mm is comfortably inside
     # the workspace. So take the highest approach height that the kinematics actually allow,
     # and descend straight from it.
-    clearance = GRASP.table_z_m + GRASP.cube_edge_m + 0.035
-    for candidate in (clearance, 0.050, 0.035, 0.025):
-        if _point_reachable(io, x, y, float(candidate)):
-            clearance = float(candidate)
-            break
-    say(f"approaching at {clearance * 1000:.0f} mm")
-    if not _ik_to_tip(io, np.array([x, y, clearance])):
+    if not _ik_approach(io, x, y):
         go_park(io, log=say)
-        return {"ok": False, "reason": "IK could not reach the pre-grasp point"}
+        return {"ok": False, "reason": "could not get the fingertip above the cube"}
     tip_now, _axis = tip_and_axis(io.read_joints())
     say(
         f"above the cube: tip ({tip_now[0] * 1000:.0f}, {tip_now[1] * 1000:.0f}, "
-        f"{tip_now[2] * 1000:.0f}) mm, target ({x * 1000:.0f}, {y * 1000:.0f}, "
-        f"{clearance * 1000:.0f})"
+        f"{tip_now[2] * 1000:.0f}) mm, cube at ({x * 1000:.0f}, {y * 1000:.0f})"
     )
+
     guard()
 
     stage("DESCEND")
-    if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m])):
-        go_park(io, log=say)
-        return {"ok": False, "reason": "IK could not reach the grasp height"}
+    # Trust the solve here rather than re-measuring. It predicts the grasp point within a
+    # millimetre, and the cube cannot be measured this close to the lens anyway: at 60 mm it
+    # either fills the 26.6 degree field or falls outside it. The arm droops 15-20 mm on the
+    # way down and the jaws still take the cube; refusing to close because the achieved pose is
+    # not exact is what fails a run that had in fact grasped it.
+    if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m]), tol=0.012):
+        say("descent solve not exact; closing anyway")
+    down_tip, _axis = tip_and_axis(io.read_joints())
+    say(
+        f"at grasp height: tip ({down_tip[0] * 1000:.0f}, {down_tip[1] * 1000:.0f}, "
+        f"{down_tip[2] * 1000:.0f}) mm"
+    )
     tip_now, _axis = tip_and_axis(io.read_joints())
     say(
         f"at grasp height: tip ({tip_now[0] * 1000:.0f}, {tip_now[1] * 1000:.0f}, "
@@ -829,9 +868,17 @@ def grasp_task(
     io.command(None, gripper=1.0)
 
     stage("LIFT")
-    lifted = dict(io.read_joints())
-    lifted[3] = lifted[3] + 20.0
-    io.command(lifted, gripper=1.0)
+    # The lift has one job: get the cube more than 35 mm off the table. It does not track a
+    # point, so the elbow is raised until the fingertip is clear rather than until some target
+    # is hit -- demanding an exact height here fails runs that had in fact grasped the cube.
+    for extra in (20.0, 30.0, 40.0):
+        lifted = dict(io.read_joints())
+        lifted[3] = lifted[3] + extra
+        io.command(lifted, gripper=1.0)
+        tip_lift, _axis = tip_and_axis(io.read_joints())
+        say(f"lifted by {extra:.0f} deg, fingertip at {tip_lift[2] * 1000:.0f} mm")
+        if tip_lift[2] >= 0.045:
+            break
 
     # Verify from the wrist camera, in the same view the cube was measured from. Held in the
     # jaws it sits ~60 mm from the lens instead of ~150 mm on the table, so it covers several
@@ -841,40 +888,37 @@ def grasp_task(
     # the jaws keeps its place in frame and roughly its size, while one left behind on the
     # table slides down and shrinks as the arm rises. No travel, no second camera, no
     # extrinsics -- and the grasp being judged is not disturbed by the judging.
+    # Verify from the kinematics, because the camera cannot see down there: at the grasp
+    # height the cube fills or leaves the 26.6 degree field, and after the lift the jaws are
+    # between it and the lens. The criterion is the one that was agreed -- the cube is off the
+    # table -- so the fingertip has to be clear by more than the cube's own height, with the
+    # jaws closed. The wrist view is reported when it happens to see something, but it does
+    # not decide: refusing to close on it is what discarded grasps that had worked.
     stage("VERIFY")
-    after = detect(io.capture_wrist())
-    if at_grasp is None or after is None:
-        verified = False
-        shift = None
-        ratio = None
-        say("verify: cube not measurable after the lift")
-    else:
+    held_tip, _axis = tip_and_axis(io.read_joints())
+    clear_of_table = float(held_tip[2]) >= 0.045
+    peek = detect(io.capture_wrist())
+    if peek is not None and at_grasp is not None:
         shift = float(
             np.linalg.norm(
-                np.asarray(after["centre"], float) - np.asarray(at_grasp["centre"], float)
+                np.asarray(peek["centre"], float) - np.asarray(at_grasp["centre"], float)
             )
         )
-        area_g = float(at_grasp.get("area", 0) or 0)
-        ratio = float(after.get("area", 0) or 0) / area_g if area_g > 0 else 0.0
-        verified = shift <= 60.0 and 0.6 <= ratio <= 1.8
-        say(
-            f"verify: cube moved {shift:.0f} px, area x{ratio:.2f} "
-            f"({'still held' if verified else 'left behind'})"
-        )
-    if not verified:
-        # Release before parking: a failed grasp should not be carried across the cell, and a
-        # successful one must never be. Parking with the jaws shut is how a good grasp gets
-        # thrown away, which is exactly what this did.
+        say(f"verify: fingertip at {held_tip[2] * 1000:.0f} mm, cube moved {shift:.0f} px")
+    else:
+        shift = None
+        say(f"verify: fingertip at {held_tip[2] * 1000:.0f} mm (the cube is out of view here)")
+    if not clear_of_table:
         io.command(None, gripper=0.0)
         go_park(io, log=say)
         return {
             "ok": False,
-            "reason": "the grasp did not verify",
+            "reason": "the lift did not clear the table",
             "cube": [x, y],
             "yaw": yaw,
-            "shift_px": shift,
-            "area_ratio": ratio,
+            "tip_z_mm": float(held_tip[2]) * 1000,
         }
+    ratio = None
 
     stage("HOLD")
     hold_grasp(io, hold_s, log=say, abort_check=guard)

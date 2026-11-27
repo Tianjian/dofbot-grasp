@@ -21,6 +21,14 @@ class RobotIO(Protocol):
     def read_joints(self) -> dict[int, float]:
         """Servo angles in degrees, ids 1..5."""
 
+    def read_gripper(self) -> float | None:
+        """The jaws' own position, in degrees. Blocked by a cube, they stop short.
+
+        This is the one grasp signal that needs no camera: the arm knows whether the jaws
+        closed on something or on nothing, and at the grasp height the wrist view cannot see
+        the cube at all.
+        """
+
     def command(
         self, target: dict[int, float] | None, gripper: float | None = None
     ) -> dict[int, float]:
@@ -106,6 +114,17 @@ class SimRobot:
             self._mj.mj_name2id(self.model, self._mj.mjtObj.mjOBJ_JOINT, name)
         ]
 
+    def read_gripper(self) -> float | None:
+        sides = []
+        for name in ("gripper_left", "gripper_right"):
+            try:
+                sides.append(float(self.data.qpos[self._addr(name)]))
+            except Exception:
+                return None
+        if not sides:
+            return None
+        return float(np.degrees(np.mean(sides)))
+
     def read_joints(self) -> dict[int, float]:
         out = {}
         for i in range(1, 6):
@@ -128,9 +147,13 @@ class SimRobot:
         else:
             goal[:5] = np.radians([target[i] - JOINTS.offsets_deg[i] for i in range(1, 6)])
         # the simulated jaw is a slide; full closure is sim_jaw_travel() metres
-        goal[5] = (
-            start[5] if gripper is None else float(np.clip(gripper, 0.0, 1.0)) * sim_jaw_travel()
-        )
+        if gripper is not None and not 0.0 <= float(gripper) <= 1.0:
+            raise ValueError(
+                f"gripper must be a fraction 0..1, got {gripper}. Servo degrees belong in "
+                f"the joint dict; passing JOINTS.gripper_open_deg here used to be clipped to "
+                f"1.0, so every 'open' command closed the jaws."
+            )
+        goal[5] = start[5] if gripper is None else float(gripper) * sim_jaw_travel()
         for k in range(ramp):
             a = (k + 1) / ramp
             self.data.ctrl[:] = start + (goal - start) * a
@@ -255,6 +278,12 @@ class SerialRobot:
         self.wrist_device = wrist_device or CAMERAS.wrist_device
         self.observer_device = observer_device or CAMERAS.observer_device
 
+    def read_gripper(self) -> float | None:
+        try:
+            return float(self.arm.read(6))
+        except Exception:
+            return None
+
     def read_joints(self) -> dict[int, float]:
         return self.arm.pose()
 
@@ -263,7 +292,9 @@ class SerialRobot:
     ) -> dict[int, float]:
         deg = None
         if gripper is not None:
-            frac = float(np.clip(gripper, 0.0, 1.0))
+            if not 0.0 <= float(gripper) <= 1.0:
+                raise ValueError(f"gripper must be a fraction 0..1, got {gripper}")
+            frac = float(gripper)
             deg = JOINTS.gripper_open_deg + frac * (
                 JOINTS.gripper_shut_deg - JOINTS.gripper_open_deg
             )
