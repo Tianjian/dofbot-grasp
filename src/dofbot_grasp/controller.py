@@ -183,7 +183,7 @@ def _ik_to_tip(io, target_xyz, *, tol: float = 0.007) -> bool:
     predicted_error = float(np.linalg.norm(np.asarray(target_xyz, float) - predicted))
     if predicted_error >= 3 * tol:
         return False
-    io.command({i + 1: float(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1]) for i in range(5)})
+    io.command(servo_command(q))
     tip, _ = tip_and_axis(io.read_joints())
     error = float(np.linalg.norm(np.asarray(target_xyz, float) - tip))
     # 3 x tol = 21 mm. The jaws allow about 10 mm of lateral error, but the arm cannot place
@@ -473,6 +473,20 @@ def project_points(C, R, intr: dict, points_m) -> np.ndarray:
 
 # The flow's fixed poses. PARK is where every failure returns; OBSERVE is where the arm waits
 # with the camera pointed at the desk, looking at (0, 166) mm with a 70 mm footprint.
+def servo_command(q) -> dict[int, float]:
+    """IK joints -> servo degrees, clamped to what the bus will accept.
+
+    An IK solution can land a ten-thousandth of a degree outside a joint limit, which is
+    numerical noise rather than a request, but the bus treats it as an out-of-range command and
+    aborts the run. Clamping in one place keeps that from being rediscovered at every call site.
+    """
+    out = {}
+    for i in range(5):
+        lo, hi = 0.5, JOINTS.servo_range_deg.get(i + 1, 180.0) - 0.5
+        out[i + 1] = float(np.clip(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1], lo, hi))
+    return out
+
+
 PARK_POSE: dict[int, float] = {1: 90.0, 2: 90.0, 3: 90.0, 4: 90.0, 5: 135.0}
 #: Where the arm waits with the camera pointed at the desk. It looks at (0, 141) mm with a
 #: 70 mm footprint. Aimed closer than about 150 mm on purpose: at 165 mm the arm sits at the
@@ -671,7 +685,12 @@ def move_settled(
         if worst <= tol_deg:
             return got
         for k in target:
-            commanded[k] = target[k] + (target[k] - got.get(k, target[k]))
+            # clamp to what the servo can actually be told: j3 and j4 are already near zero at
+            # the observation pose, and an unclamped correction drove them negative, which the
+            # bus rejects as outside its mechanical range and aborts the run
+            wanted = target[k] + (target[k] - got.get(k, target[k]))
+            lo, hi = 0.0, JOINTS.servo_range_deg.get(k, 180.0)
+            commanded[k] = float(np.clip(wanted, lo + 1.0, hi - 1.0))
     return io.read_joints()
 
 
@@ -704,7 +723,7 @@ def _ik_approach(
             continue
         if float(np.hypot(tip[0] - x, tip[1] - y)) > max_lateral:
             continue
-        io.command({i + 1: float(np.degrees(q[i]) + JOINTS.offsets_deg[i + 1]) for i in range(5)})
+        io.command(servo_command(q))
         done, _ = tip_and_axis(io.read_joints())
         if (
             done[2] >= min_z * 0.9
@@ -899,11 +918,6 @@ def grasp_task(
             break
 
     stage("CLOSE")
-    # Reference measured from the grasp pose, before the jaws move: after the lift the cube
-    # either comes with the arm (same place in frame, same size) or stays on the table (lower
-    # and smaller). Comparing against this is what the verification needs, and it must be
-    # taken here -- travelling somewhere else to judge throws away the grasp it is judging.
-    at_grasp = detect(io.capture_wrist())
     io.command(None, gripper=1.0)
 
     stage("LIFT")
@@ -949,17 +963,7 @@ def grasp_task(
     clear_of_table = float(held_tip[2]) >= 0.045
     if gripped is None:
         gripped = clear_of_table
-    peek = detect(io.capture_wrist())
-    if peek is not None and at_grasp is not None:
-        shift = float(
-            np.linalg.norm(
-                np.asarray(peek["centre"], float) - np.asarray(at_grasp["centre"], float)
-            )
-        )
-        say(f"verify: fingertip at {held_tip[2] * 1000:.0f} mm, cube moved {shift:.0f} px")
-    else:
-        shift = None
-        say(f"verify: fingertip at {held_tip[2] * 1000:.0f} mm (the cube is out of view here)")
+    say(f"verify: fingertip at {held_tip[2] * 1000:.0f} mm, jaws {jaws_now}")
     if not clear_of_table:
         io.command(None, gripper=0.0)
         go_park(io, log=say)

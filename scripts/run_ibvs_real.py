@@ -1,6 +1,6 @@
 """Run the grasp on the real DOFBOT SE.
 
-Thin wrapper: the sequence lives in ``dofbot_grasp.controller.grasp_measured`` and the bus
+Thin wrapper: the sequence lives in ``dofbot_grasp.controller.grasp_task`` and the bus
 rules in ``dofbot_grasp.arm``, so this script only builds the backend, finds the cube, and
 hands over.
 
@@ -29,15 +29,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from dofbot_grasp.controller import (  # noqa: E402
-    camera_pose,
-    grasp_measured,
-    measure_cube,
+    grasp_task,
     observer_sweep,
-    search_poses,
     tip_and_axis,
 )
 from dofbot_grasp.hardware import SerialRobot  # noqa: E402
-from dofbot_grasp.params import CAMERAS, GRASP, JOINTS  # noqa: E402
+from dofbot_grasp.params import CAMERAS  # noqa: E402
 from dofbot_grasp.tracker import make_detector  # noqa: E402
 
 
@@ -88,6 +85,7 @@ def main() -> int:
 
     monitor = None
     semantic = None
+    record_path = None
     if not args.dry_run:
         from dofbot_grasp.safety import ObserverMonitor
 
@@ -107,6 +105,9 @@ def main() -> int:
             robot.capture_observer,
             evidence_dir=ROOT / "logs" / "observer",
             semantic=semantic,
+            # the arm's own motion is the largest change in this view; the face check is what
+            # can tell a person apart from it
+            motion_enabled=False,
             record_path=record_path,
         )
         monitor.start()
@@ -119,104 +120,20 @@ def main() -> int:
         print("pose (deg):", {k: round(v, 1) for k, v in pose.items()})
         print("fingertip (mm):", np.round(tip * 1000, 0), " tool axis:", np.round(axis, 2))
 
-        det = find_cube(robot, detector)
-        rough = None
-        if det is not None:
-            rough = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
-        if det is not None and rough is None:
-            # A detection from a parked pose can be anything warm-coloured: if its ray does
-            # not even reach the table, it is not the cube, so sweep instead of trusting it.
-            print("that detection does not land on the table; sweeping instead")
-            det = find_cube(robot, detector, force_sweep=True)
-            rough = (
-                None
-                if det is None
-                else robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
-            )
-        if det is None or rough is None:
-            print("no pose saw the cube on the table -- put it where the arm can reach it")
-            return 1
-        pose = robot.read_joints()
-        cam_c, _ = camera_pose(pose)
-        print(
-            f"cube pixel {tuple(round(v) for v in det['centre'])}, "
-            f"back-projected ({rough[0] * 1000:.0f}, {rough[1] * 1000:.0f}) mm"
-        )
-        print(
-            f"camera at ({cam_c[0] * 1000:.0f}, {cam_c[1] * 1000:.0f}, "
-            f"{cam_c[2] * 1000:.0f}) mm, fx {intr['fy']:.0f}"
-        )
-
-        # Seeing the cube is not measuring it: from where it was first noticed the silhouette
-        # may be half out of frame or grazing. Try the poses that should frame it properly and
-        # can also reach it, and keep the first whose fit is good enough to act on.
-        measured = None
-        for cand in search_poses(intr, (float(rough[0]), float(rough[1])), limit=8):
-            robot.command(cand, gripper=0.0)
-            measured = measure_cube(robot, detector, log=print)
-            if measured is not None:
-                print(f"measured from { {k: round(v) for k, v in cand.items()} }")
-                break
-        if measured is None:
-            print("no pose gave a usable fit; refusing to move on a guess")
-            return 1
-
-        # Independent check: the observer sees the same cube, and although its pose is not
-        # calibrated, its apparent size gives a distance. If that disagrees badly with the
-        # wrist camera's position, one of them is wrong and the run should not continue.
-        from dofbot_grasp.observer_vision import cube_side_px, distance_from_side_px
-
-        obs_frame = robot.capture_observer()
-        side = cube_side_px(obs_frame) if obs_frame is not None else None
-        obs_intr = json.loads((ROOT / CAMERAS.observer_intrinsics).read_text())
-        obs_dist = distance_from_side_px(side, obs_intr) if side else None
-        if obs_dist is not None:
-            here = np.array([measured["x"], measured["y"], 0.015])
-            observer_at = np.array(obs_intr.get("position_m", [0.41, 0.35, 0.025]))
-            expect = float(np.linalg.norm(here - observer_at))
-            # The apparent size gives a distance from the observer with no extrinsics at all,
-            # which is why it is worth printing. Turning it into a verdict needs the observer's
-            # own position, and that mount is nominal -- so this stays information until
-            # somebody calibrates it. (Calibrating it from a chessboard is scripted:
-            # scripts/calibrate_observer_extrinsics.py.)
-            print(
-                f"observer check: cube {side:.0f} px wide -> {obs_dist * 1000:.0f} mm from the "
-                f"observer; the wrist position sits {expect * 1000:.0f} mm from the nominal mount"
-            )
-        else:
-            print("observer check: cube not measurable in the observer view")
-
+        # Everything from here is the flow: park, observation pose, watch, choose a view,
+        # measure, grasp, verify. The script used to position the arm itself first, with its own
+        # sweep and candidate search -- a second strategy that could fail before the flow even
+        # started, and did.
         if args.dry_run:
-            print("dry run: nothing moved")
-            return 0
-        if args.measure_only:
-            print(
-                f"measured ({measured['x'] * 1000:.0f}, {measured['y'] * 1000:.0f}) mm, "
-                f"iou {measured['iou']:.2f} -- stopping before the grasp"
-            )
+            print("dry run: reading the pose only")
             return 0
 
-        monitor = None
-        from dofbot_grasp.safety import ObserverMonitor, SafetyAbort
-
-        semantic = None
-        try:
-            from dofbot_grasp.observer_vision import ObserverVision
-
-            semantic = ObserverVision(ROOT)
-            print(
-                "observer semantics:",
-                "GPU" if semantic.state.available else "unavailable, pixel check only",
-            )
-        except Exception as exc:
-            print(f"observer semantics unavailable ({type(exc).__name__})")
-        monitor = ObserverMonitor(
-            robot.capture_observer, evidence_dir=ROOT / "logs" / "observer", semantic=semantic
-        )
-        monitor.start()
+        from dofbot_grasp.safety import SafetyAbort
 
         def guard() -> None:
             monitor.raise_if_alarmed()
+            # the arm has just moved; take a fresh reference so its own motion is not an alarm
+            monitor.rebaseline()
             if semantic is not None and semantic.state.available:
                 frame = robot.capture_observer()
                 if frame is not None:
@@ -227,7 +144,16 @@ def main() -> int:
             monitor.annotate(name)  # burnt into the video, for the review afterwards
 
         try:
-            result = grasp_measured(robot, detector, log=print, abort_check=guard, on_stage=stage)
+            result = grasp_task(
+                robot,
+                detector,
+                log=print,
+                abort_check=guard,
+                on_stage=stage,
+                intr=intr,
+                watch_timeout_s=30.0,
+                hold_s=60.0,
+            )
         except SafetyAbort as exc:
             print(f"ABORTED by the observer monitor: {exc}")
             return 3
@@ -240,7 +166,7 @@ def main() -> int:
     finally:
         if monitor is not None:
             monitor.stop()
-            print(f"recording stopped: {monitor._record_path}")
+            print(f"recording stopped: {record_path}")
         robot.close()
 
 

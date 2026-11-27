@@ -43,10 +43,15 @@ class ObserverMonitor:
         evidence_dir: Path | None = None,
         interval_s: float = 0.1,
         semantic: object | None = None,
+        motion_enabled: bool = True,
         record_path: Path | None = None,
         record_fps: float = 10.0,
     ) -> None:
         self._capture = capture
+        # Pixel motion cannot separate a person from the arm: while the arm moves it is the
+        # largest change in the frame, 7 % of it, and alarming on that aborts every run. The
+        # face check is what can tell a person apart, so motion is off by default during a run.
+        self._motion_enabled = motion_enabled
         self._motion_fraction = motion_fraction
         self._confirm = confirm_frames
         self._warmup = warmup_frames
@@ -113,6 +118,17 @@ class ObserverMonitor:
             raise SafetyAbort(reason)
 
     # -- worker ---------------------------------------------------------
+    def rebaseline(self) -> None:
+        """Forget the last frame as a reference.
+
+        The arm moves between stages, and the observer sees that as a large change. Re-baselining
+        after each stage means the motion alarm only speaks for what happens while the arm is
+        supposed to be holding still, which is the interval where somebody reaching in matters.
+        """
+        with self._lock:
+            self._baseline = None
+            self._strikes = 0
+
     def annotate(self, label: str) -> None:
         """Set the line burnt into the recording, so a review knows which stage it is seeing."""
         self._stage_label = label
@@ -201,6 +217,9 @@ class ObserverMonitor:
             if self.frames < self._warmup:
                 # auto-exposure and auto-white-balance settle over the first frames; alarming
                 # on that would make the monitor useless on a real webcam
+                self._baseline = grey
+                return
+            if not self._motion_enabled:
                 self._baseline = grey
                 return
             changed = float(np.mean(np.abs(grey - self._baseline) > 25.0))
