@@ -31,14 +31,16 @@ from dofbot_grasp.tracker import make_detector  # noqa: E402
 
 
 def sweep_poses() -> list[dict[int, float]]:
-    """A handful of poses covering the reachable table, all with the fingers well clear."""
-    out: list[dict[int, float]] = []
-    for j1 in (60.0, 90.0, 120.0):
-        for j2, j3 in ((90.0, 60.0), (110.0, 20.0), (70.0, 100.0)):
-            j4 = j2 + j3 - 90.0
-            if 0.0 <= j4 <= 180.0:
-                out.append({1: j1, 2: j2, 3: j3, 4: j4, 5: 135.0})
-    return out
+    """Four poses that look down at the front of the desk.
+
+    Chosen by geometry, not by taste: the tool axis must point down (axis_z < -0.75) or the
+    wrist camera looks at the room instead of the table, and the fingertip must sit
+    100-250 mm up. With j2=90 the elbow gives those at j3=20, j4=20, and the four j1 values
+    sweep the front work area from left to right.
+    """
+    return [
+        {1: float(j1), 2: 90.0, 3: 20.0, 4: 20.0, 5: 135.0} for j1 in (60.0, 80.0, 100.0, 120.0)
+    ]
 
 
 def intr_path() -> Path:
@@ -48,7 +50,12 @@ def intr_path() -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="measure and print, do not move")
-    ap.add_argument("--observer", default=None, help="observer camera device to record")
+    ap.add_argument("--observer", default=None, help="observer camera device to watch")
+    ap.add_argument(
+        "--measure-only",
+        action="store_true",
+        help="find and measure the cube, then stop before touching it",
+    )
     args = ap.parse_args()
 
     path = intr_path()
@@ -106,8 +113,35 @@ def main() -> int:
             print("dry run: nothing moved")
             return 0
 
-        result = grasp_measured(robot, detector, log=print)
+        # the observer camera is the referee: it notices someone reaching in, or a camera
+        # that has quietly stopped delivering, neither of which the wrist view can see
+        monitor = None
+        if not args.measure_only:
+            from dofbot_grasp.safety import ObserverMonitor, SafetyAbort
+
+            monitor = ObserverMonitor(
+                robot.capture_observer, evidence_dir=ROOT / "logs" / "observer"
+            )
+            monitor.start()
+            print("observer monitor running; any alarm aborts before the next stage")
+
+        try:
+            result = grasp_measured(
+                robot,
+                detector,
+                log=print,
+                abort_check=monitor.raise_if_alarmed if monitor else None,
+                measure_only=args.measure_only,
+            )
+        except SafetyAbort as exc:
+            print(f"ABORTED by the observer monitor: {exc}")
+            return 3
+        finally:
+            if monitor is not None:
+                monitor.stop()
         print("result:", result)
+        if monitor is not None and monitor.alarm:
+            print("observer alarm during the run:", monitor.alarm)
         return 0 if result.get("ok") else 1
     finally:
         robot.close()

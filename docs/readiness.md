@@ -34,8 +34,16 @@ hand-eye script that generated it are **deleted**; `params.MOUNT` is the only de
 is gone: the bus wrapper moved into `dofbot_grasp.arm` and the camera maths now comes from
 the controller, so there is one implementation of each.
 
-**3. There is still no observer safety monitor.** The observer camera opens and can capture,
-but nothing watches it during a run. This remains the open safety item for the first session.
+**3. (resolved) There is now an observer safety monitor.** `dofbot_grasp.safety` runs the
+observer camera in a background thread and flags two things the wrist view cannot: unexplained
+motion in the room (someone reaching in) and a camera that has stopped delivering. It aborts
+the run between stages and writes the frames around the alarm to `logs/observer/`.
+
+It is deliberately image-space, not a 3-D envelope: the observer's intrinsics are calibrated
+but its extrinsics are not, so it can say "the scene changed" but not "a hand is inside the
+workspace". Thresholds: 4 % of a downsampled grey frame changing by more than 25 levels, on
+three consecutive frames, after a 20-frame warm-up for auto-exposure. Tested against the real
+camera (no false alarms over four seconds) and against synthetic motion (alarms).
 
 ## Worth knowing before the first run
 
@@ -44,6 +52,23 @@ but nothing watches it during a run. This remains the open safety item for the f
   for an overhead view means going lower than feels natural;
 * the fingers are in frame at the task pose, which is what moved the model to thin jaws;
 * the arm is parked at `(90, 90, 90, 90, 135)` with the jaws open (`~20 deg`).
+
+## Modes
+
+```bash
+python scripts/run_ibvs_real.py --dry-run        # read the pose, report, move nothing
+python scripts/run_ibvs_real.py --measure-only   # sweep for the cube, measure, stop
+python scripts/run_ibvs_real.py                  # full grasp, observer monitor running
+```
+
+The sweep is four poses that look down at the front of the desk (j2 90, j3 20, j4 20, j1 in
+{60,80,100,120}), chosen because the tool axis must point down or the wrist camera looks at
+the room.
+
+**The colour detector false-positives on the real desk.** It fired on a pale patch of the
+paper covering the table during a sweep, and on a yellow bag strap in another view. The cube
+must be the only yellow object in the swept area, and the fit's IoU gate (0.6) is what
+currently rejects the bad ones.
 
 ## Suggested order for the first session
 

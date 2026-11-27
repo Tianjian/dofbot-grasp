@@ -172,7 +172,13 @@ def _ik_to_tip(io, target_xyz, *, tol: float = 0.012) -> bool:
 
 
 def grasp_measured(
-    io, detect: Callable, *, log: Callable | None = None, on_stage: Callable | None = None
+    io,
+    detect: Callable,
+    *,
+    log: Callable | None = None,
+    on_stage: Callable | None = None,
+    abort_check: Callable[[], None] | None = None,
+    measure_only: bool = False,
 ) -> dict:
     """Centre on the cube, measure it, then grasp open loop with IK.
 
@@ -184,6 +190,7 @@ def grasp_measured(
     """
     say = log or (lambda _m: None)
     stage = on_stage or (lambda _s: None)
+    guard = abort_check or (lambda: None)
 
     stage("AIM")
     # Centring is best effort. It sharpens the measurement, but the fit does not require the
@@ -207,6 +214,10 @@ def grasp_measured(
         f"yaw {np.degrees(yaw):.0f} deg"
     )
 
+    if measure_only:
+        return {"ok": True, "measured": True, "cube": [x, y], "yaw": yaw}
+
+    guard()
     stage("ALIGN")
     j5 = align_jaws_to_yaw(io, yaw)
     say(f"jaws squared at j5 = {j5:+.0f} deg")
@@ -217,11 +228,13 @@ def grasp_measured(
         return {"ok": False, "reason": "IK could not reach the pre-grasp point"}
     say("above the cube")
 
+    guard()
     stage("DESCEND")
     if not _ik_to_tip(io, np.array([x, y, GRASP.fingertip_grasp_z_m])):
         return {"ok": False, "reason": "IK could not reach the grasp height"}
     say("at grasp height")
 
+    guard()
     stage("CLOSE")
     io.command(None, gripper=1.0)
     stage("LIFT")
