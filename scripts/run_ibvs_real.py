@@ -26,8 +26,19 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from dofbot_grasp.controller import camera_pose, grasp_measured, tip_and_axis  # noqa: E402
 from dofbot_grasp.hardware import SerialRobot  # noqa: E402
-from dofbot_grasp.params import CAMERAS, GRASP  # noqa: E402
+from dofbot_grasp.params import CAMERAS, GRASP, JOINTS  # noqa: E402
 from dofbot_grasp.tracker import make_detector  # noqa: E402
+
+
+def sweep_poses() -> list[dict[int, float]]:
+    """A handful of poses covering the reachable table, all with the fingers well clear."""
+    out: list[dict[int, float]] = []
+    for j1 in (60.0, 90.0, 120.0):
+        for j2, j3 in ((90.0, 60.0), (110.0, 20.0), (70.0, 100.0)):
+            j4 = j2 + j3 - 90.0
+            if 0.0 <= j4 <= 180.0:
+                out.append({1: j1, 2: j2, 3: j3, 4: j4, 5: 135.0})
+    return out
 
 
 def intr_path() -> Path:
@@ -60,9 +71,26 @@ def main() -> int:
             print("no wrist camera frame")
             return 2
         det = detector(frame)
-        if det is None:
-            print("cube not visible from here -- move the arm until it is")
+        if det is None and args.dry_run:
+            print("cube not visible from the parked pose; a real run would sweep:")
+            for cand in sweep_poses():
+                print("   ", {k: round(v) for k, v in cand.items()})
             return 1
+        if det is None:
+            # A model-driven search cannot help here: it would need the cube's position,
+            # which is exactly what we are looking for. Sweep instead -- a few poses spread
+            # over the workspace, stop at the first that sees it.
+            print("cube not visible from here; sweeping the workspace")
+            for cand in sweep_poses():
+                robot.command(cand, gripper=JOINTS.gripper_open_deg)
+                det = detector(robot.capture_wrist())
+                if det is not None:
+                    print("found it from", {k: round(v, 1) for k, v in cand.items()})
+                    break
+            if det is None:
+                print("the sweep did not see the cube -- put it where the arm can reach")
+                return 1
+            pose = robot.read_joints()
         est = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
         cam_c, _ = camera_pose(pose)
         print(

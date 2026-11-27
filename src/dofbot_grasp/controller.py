@@ -229,3 +229,57 @@ def grasp_measured(
     lift[3] = lift[3] + 20.0
     io.command(lift, gripper=1.0)
     return {"ok": True, "cube": [x, y], "yaw": yaw}
+
+
+def search_poses(
+    intr: dict, seed_xy: tuple[float, float], *, limit: int = 12, step_deg: int = 10
+) -> list[dict[int, float]]:
+    """Servo poses from which the wrist camera should see ``seed_xy`` and can also grasp it.
+
+    Purely geometric -- no simulation -- so the arm can use the same search the trial does.
+    Two conditions, both necessary: the cube must land inside the frame, and the vertical
+    grasp pose must be reachable from there. Poses that see the cube best are often ones from
+    which the grasp is tens of millimetres out of reach, so both are checked.
+    """
+    f, cx, cy = intr["fy"], intr["cx"], intr["cy"]
+    width, height = intr.get("image_size", [640, 480])
+    scored: list[tuple[float, dict[int, float]]] = []
+    for j1 in range(40, 141, step_deg):
+        for j2 in range(30, 151, max(5, step_deg // 2)):
+            for j3 in range(0, 181, step_deg):
+                j4 = j2 + j3 - 90.0
+                if not 0.0 <= j4 <= 180.0:
+                    continue
+                pose = {1: float(j1), 2: float(j2), 3: float(j3), 4: float(j4), 5: 135.0}
+                tip, _ = tip_and_axis(pose)
+                if tip[2] < 0.040:
+                    continue
+                cam_c, cam_r = camera_pose(pose)
+                pc = (np.array([seed_xy[0], seed_xy[1], GRASP.table_z_m]) - cam_c) @ cam_r
+                depth = -pc[2]
+                if depth <= 1e-6:
+                    continue
+                u = cx + f * pc[0] / depth
+                v = cy - f * pc[1] / depth
+                if not (30.0 < u < width - 30.0 and 30.0 < v < height - 30.0):
+                    continue
+                goal = np.eye(4)
+                goal[:3, :3] = np.diag([1.0, -1.0, -1.0])
+                goal[:3, 3] = np.array(
+                    [seed_xy[0], seed_xy[1], GRASP.fingertip_grasp_z_m]
+                ) - JOINTS.fingertip_below_tcp_m * np.array([0.0, 0.0, -1.0])
+                q_goal = K.inverse(goal, seed=[float(v) for v in joint_angles(pose)])
+                tf = K.forward(q_goal)
+                tip_goal = tf[:3, 3] + JOINTS.fingertip_below_tcp_m * (
+                    tf[:3, :3] @ np.array([0.0, 0.0, 1.0])
+                )
+                reach = float(
+                    np.linalg.norm(
+                        tip_goal - np.array([seed_xy[0], seed_xy[1], GRASP.fingertip_grasp_z_m])
+                    )
+                )
+                if reach > 0.012:
+                    continue
+                scored.append((float(np.hypot(u - 0.4 * width, v - 0.6 * height)), pose))
+    scored.sort(key=lambda kv: kv[0])
+    return [p for _d, p in scored[:limit]]

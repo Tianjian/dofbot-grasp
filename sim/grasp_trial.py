@@ -34,63 +34,11 @@ def joint_angles_of(servo: dict[int, float]) -> np.ndarray:
     return np.radians(np.array([servo[i] - (90.0 if i < 5 else 135.0) for i in range(1, 6)]))
 
 
-def visible_pose_candidates(seed: tuple[float, float], limit: int = 12) -> list[dict[int, float]]:
-    """Ranked joint poses that should put ``seed`` in view, best first.
+def visible_pose_candidates(seed, limit: int = 12):
+    """The package's geometric search; kept here so the trial's call sites read the same."""
+    from dofbot_grasp.controller import search_poses
 
-    The analytic projection is only good to a few tens of pixels, so a pose can pass the
-    test and still render without the cube. The caller renders and confirms.
-    """
-    from dofbot_grasp.controller import camera_pose, tip_and_axis
-
-    intr = real_wrist_intrinsics()
-    f, cx, cy = intr["fy"], intr["cx"], intr["cy"]
-    scored: list[tuple[float, dict[int, float]]] = []
-    for j1 in range(40, 141, 10):
-        for j2 in range(40, 141, 5):
-            for j3 in range(-40, 81, 10):
-                pose = {
-                    1: float(j1),
-                    2: float(j2),
-                    3: float(j3),
-                    4: float(j2 + j3 - 90.0),
-                    5: 135.0,
-                }
-                tip, _ = tip_and_axis(pose)
-                if tip[2] < 0.040:
-                    continue
-                C, R = camera_pose(pose)
-                pc = (np.array([seed[0], seed[1], 0.015]) - C) @ R
-                depth = -pc[2]
-                if depth <= 1e-6:
-                    continue
-                u = cx + f * pc[0] / depth
-                v = cy - f * pc[1] / depth
-                if not (30.0 < u < 610.0 and 30.0 < v < 450.0):
-                    continue
-                # being able to see the cube is not enough: the grasp pose must also be
-                # reachable from here, and poses that see the cube well tend to sit in
-                # configurations from which the vertical grasp is 30 mm out of reach
-                from dofbot_grasp import kinematics as K
-                from dofbot_grasp.params import JOINTS
-
-                goal = np.eye(4)
-                goal[:3, :3] = np.diag([1.0, -1.0, -1.0])
-                gz = 0.010
-                goal[:3, 3] = np.array(
-                    [seed[0], seed[1], gz]
-                ) - JOINTS.fingertip_below_tcp_m * np.array([0.0, 0.0, -1.0])
-                q_goal = K.inverse(goal, seed=joint_angles_of(pose))
-                Tf = K.forward(q_goal)
-                tip_goal = Tf[:3, 3] + JOINTS.fingertip_below_tcp_m * (
-                    Tf[:3, :3] @ np.array([0.0, 0.0, 1.0])
-                )
-                reach = float(np.linalg.norm(tip_goal - np.array([seed[0], seed[1], gz])))
-                if reach > 0.012:
-                    continue
-                d = float(np.hypot(u - 0.4 * 640.0, v - 0.6 * 480.0))
-                scored.append((d, pose))
-    scored.sort(key=lambda kv: kv[0])
-    return [p for _d, p in scored[:limit]]
+    return search_poses(real_wrist_intrinsics(), seed, limit=limit)
 
 
 def real_wrist_intrinsics() -> dict:
