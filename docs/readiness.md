@@ -110,6 +110,12 @@ there is only a white sticker, so seeding SAM2 from yellow in that view can neve
 False: the observer's cube check is off unless somebody who knows where the cube is supplies a
 point. Its person check and the pixel-motion check are unaffected.
 
+**The observer camera's extrinsics are not right yet.** Its pose was taken from the simulated
+mount (0.410, 0.350, 0.025 aiming at the origin at 150 mm). Projecting the fingertip -- whose
+position FK knows exactly -- into the observer frame puts the marker about 140 px away from
+where the gripper actually is. So the observer can report what it sees, but not where anything
+is in base coordinates, until those extrinsics are calibrated against the arm.
+
 **The colour detector false-positives on the real desk.** It fired on a pale patch of the
 paper covering the table during a sweep, and on a yellow bag strap in another view. The cube
 must be the only yellow object in the swept area, and the fit's IoU gate (0.6) is what
