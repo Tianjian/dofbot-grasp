@@ -71,10 +71,15 @@ the arm -- so no sweep could see it. Estimated from its apparent size (about 100
 a 30 mm cube at the observer's 640 px focal length) it was ~190 mm from the observer, which is
 ~350 mm from the arm base. It has to be inside the swept area in front of the arm.
 
-**Which face matters.** The target's camera-facing side carries a printed sticker and reads as
-near-white; only its other faces are yellow. The wrist camera looks down, so it sees the top
-face -- if the top face is a sticker the colour detector will not fire at all. Turn the cube so
-a yellow face is up.
+**Which face matters, and it is the good case.** The cube's top is yellow and its four sides
+carry white stickers. The wrist camera looks down, so it sees the yellow top and the colour
+detector works normally.
+
+The observers see the opposite. The fixed observer looks at the cube from the side, where
+there is only a white sticker, so seeding SAM2 from yellow in that view can never find it.
+`ObserverVision.check` therefore takes its seed from the caller and `expect_cube` defaults to
+False: the observer's cube check is off unless somebody who knows where the cube is supplies a
+point. Its person check and the pixel-motion check are unaffected.
 
 **The colour detector false-positives on the real desk.** It fired on a pale patch of the
 paper covering the table during a sweep, and on a yellow bag strap in another view. The cube

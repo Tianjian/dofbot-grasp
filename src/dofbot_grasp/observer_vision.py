@@ -105,7 +105,10 @@ class ObserverVision:
             except Exception:
                 st.notes.append("face model failed")
         if self._sam is not None and expect_cube:
-            seed = cube_seed or self._colour_seed(frame)
+            # The target's top face is yellow but its four sides carry white stickers, and the
+            # observer looks at it from the side -- so a colour seed never finds it in this
+            # view. The seed has to come from somewhere that knows where the cube is.
+            seed = cube_seed
             if seed is not None:
                 try:
                     res = self._sam.predict(
@@ -122,34 +125,3 @@ class ObserverVision:
                     st.notes.append("cube segmentation failed")
         self.state = st
         return st
-
-    @staticmethod
-    def _colour_seed(frame: np.ndarray) -> tuple[float, float] | None:
-        import cv2
-
-        if frame is None or frame.size == 0:
-            return None
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, (12, 90, 80), (45, 255, 255))
-        # the observer looks down at the desk from above, so the cube is in the lower part of
-        # the frame; without this the seed lands on packaging on a shelf behind it
-        h = frame.shape[0]
-        mask[: int(0.60 * h), :] = 0
-        ys, xs = np.nonzero(mask)
-        if len(xs) < 200:
-            return None
-        # largest blob, not the mean of all yellow pixels
-        count, labels, stats, _ = cv2.connectedComponentsWithStats(
-            mask.astype(np.uint8), connectivity=8
-        )
-        if count < 2:
-            return None
-        # the cube covers a few hundred pixels from where the observer sits; larger blobs are
-        # packaging or a poster, smaller ones are noise
-        areas = [int(stats[i, cv2.CC_STAT_AREA]) for i in range(1, count)]
-        plausible = [(a, i) for i, a in enumerate(areas, start=1) if 150 <= a <= 6000]
-        if not plausible:
-            return None
-        biggest = max(plausible)[1]
-        ys, xs = np.nonzero(labels == biggest)
-        return float(xs.mean()), float(ys.mean())
