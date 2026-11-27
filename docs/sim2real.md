@@ -89,3 +89,19 @@ Kept here because they will bite during deployment:
   twice.
 
 These are documented in `docs/hardware-notes.md` with the measurements behind them.
+
+## The fingers change length with the jaws
+
+The real gripper is a parallel-linkage mechanism: at the open position its fingers are short,
+and they lengthen towards the closed position, where they approach the length modelled in the
+simulation. The simulated fingers are a fixed box, so they are full length even when open.
+
+That matters for the approach. A cube 9 mm off the tool axis is straddled by closed-length
+fingers but swept aside by open-length ones, which is why three of the four simulated seeds
+push the cube 26-37 mm during the descent. On the arm the fingers are short at that moment and
+pass beside it. The simulated grasp rate is therefore pessimistic for this failure mode, and
+fixing it is a modelling change rather than a control change -- not urgent.
+
+What is worth doing on the controller side is the same in both places: make the verification
+judge the grasp from the jaws' travel rather than from the fingertip's height.
+

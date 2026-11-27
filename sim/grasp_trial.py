@@ -25,11 +25,24 @@ sys.path.insert(0, str(ROOT / "src"))
 # Every seed has to sit inside the observation window: the wrist camera at OBSERVE_POSE sees
 # x -40..54 mm, y 105..177 mm of the table, and the agreed contract is that the cube enters
 # that view. A seed outside it tests nothing but the timeout.
+# Ten positions, all inside the observation window (x -40..54 mm, y 105..177 mm at
+# OBSERVE_POSE) and all confirmed visible before a seed is run. Ten rather than four because a
+# physical simulator fails for physical reasons -- droop, contact order, a finger nudging the
+# cube -- and a rate over four samples cannot tell that from a control fault.
+# Ten positions, each confirmed visible through the same gate the flow uses. Ten rather than
+# four because a physical simulator fails for physical reasons -- droop, contact order, a finger
+# nudging the cube -- and a rate over four samples cannot tell that from a control fault.
 SEEDS = [
-    (0.005, 0.138),
-    (0.022, 0.150),
-    (-0.018, 0.145),
-    (0.012, 0.128),
+    (-0.020, 0.140),
+    (-0.020, 0.160),
+    (-0.010, 0.130),
+    (-0.010, 0.160),
+    (0.000, 0.130),
+    (0.000, 0.150),
+    (0.010, 0.140),
+    (0.010, 0.160),
+    (0.020, 0.120),
+    (0.020, 0.150),
 ]
 
 
@@ -110,7 +123,13 @@ def seed_is_visible(seed) -> bool:
         img_h=480,
         real_cameras={"wrist_cam": RealCamera(ROOT / "calib" / "intrinsics_wrist.json")},
     )
-    return make_detector()(io.capture_wrist()) is not None
+    frame = io.capture_wrist()
+    found = make_detector()(frame)
+    if found is None:
+        return False
+    from dofbot_grasp.controller import is_yellow
+
+    return is_yellow(frame, found["mask"])
 
 
 def run(seed, *, verbose: bool = False, use_gpu: bool = True) -> dict:

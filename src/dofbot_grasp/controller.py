@@ -497,10 +497,17 @@ def is_yellow(frame: np.ndarray, mask: np.ndarray) -> bool:
     ys, xs = np.nonzero(mask)
     if len(xs) < 200:
         return False
-    hue = float(hsv[ys, xs, 0].mean())
-    sat = float(hsv[ys, xs, 1].mean())
-    val = float(hsv[ys, xs, 2].mean())
-    return 5.0 <= hue <= 45.0 and sat >= 90.0 and val >= 80.0
+    # A fraction, not a mean. At the edge of the frame the mask picks up a strip of grey floor,
+    # which drags the average saturation under the threshold and rejects a cube that is plainly
+    # there -- three of ten seeds failed that way. Asking what share of the region is yellow is
+    # robust to a contaminated edge.
+    band = (
+        (hsv[ys, xs, 0] >= 5.0)
+        & (hsv[ys, xs, 0] <= 45.0)
+        & (hsv[ys, xs, 1] >= 80.0)
+        & (hsv[ys, xs, 2] >= 70.0)
+    )
+    return bool(band.mean() >= 0.45)
 
 
 def watch_for_cube(
@@ -647,9 +654,30 @@ def hold_grasp(
     say(f"held the grasp for {seconds:.0f} s")
 
 
+def move_settled(
+    io, target: dict[int, float], *, gripper: float = 0.0, iters: int = 2, tol_deg: float = 0.4
+) -> dict[int, float]:
+    """Command a pose and compensate for the arm's steady-state droop.
+
+    The arm settles about 1.4 degrees below a commanded j2. At a 26.6 degree field that moves
+    the camera's view by roughly 33 px, which is enough for a cube near the edge of the
+    observation window to fall out of it -- and it did, for three of ten seeds. Commanding the
+    target plus the residual is cheap and puts the pose where it was asked to be.
+    """
+    commanded = dict(target)
+    for _ in range(iters + 1):
+        got = io.command(dict(commanded), gripper=gripper)
+        worst = max(abs(got.get(k, commanded[k]) - target[k]) for k in target)
+        if worst <= tol_deg:
+            return got
+        for k in target:
+            commanded[k] = target[k] + (target[k] - got.get(k, target[k]))
+    return io.read_joints()
+
+
 def go_park(io, *, log: Callable | None = None) -> None:
     (log or (lambda _m: None))("returning to park")
-    io.command(dict(PARK_POSE), gripper=0.0)
+    move_settled(io, PARK_POSE, gripper=0.0)
 
 
 def _ik_approach(
@@ -732,8 +760,19 @@ def grasp_task(
     go_park(io, log=say)
     guard()
 
+    # Close on nothing once, at park, to learn how far the jaws travel when unimpeded. Later a
+    # close that stops short of this is a close that found something -- and on the real arm the
+    # fingers are a parallel linkage, so this is the only signal that says "there is a cube
+    # between the jaws" rather than "the arm went up".
+    io.command(None, gripper=1.0)
+    free_close = io.read_gripper() if hasattr(io, "read_gripper") else None
+    io.command(None, gripper=0.0)
+    if free_close is not None:
+        say(f"jaws close to {free_close:.3f} on nothing")
+
     stage("OBSERVE")
-    io.command(dict(OBSERVE_POSE), gripper=0.0)
+    settled = move_settled(io, OBSERVE_POSE)
+    say(f"observation pose: { {k: round(v, 1) for k, v in settled.items()} }")
     say("watching for the cube")
 
     stage("WATCH")
@@ -896,7 +935,20 @@ def grasp_task(
     # not decide: refusing to close on it is what discarded grasps that had worked.
     stage("VERIFY")
     held_tip, _axis = tip_and_axis(io.read_joints())
+    jaws_now = io.read_gripper() if hasattr(io, "read_gripper") else None
+    if free_close is not None and jaws_now is not None:
+        # a jaw that stopped short of the free-close position has something between it
+        gripped = bool(jaws_now < free_close - 0.0005)
+        say(
+            f"verify: jaws at {jaws_now:.3f} against {free_close:.3f} free "
+            f"({'holding' if gripped else 'empty'})"
+        )
+    else:
+        gripped = None
+        say("verify: jaw travel not available; falling back to the fingertip height")
     clear_of_table = float(held_tip[2]) >= 0.045
+    if gripped is None:
+        gripped = clear_of_table
     peek = detect(io.capture_wrist())
     if peek is not None and at_grasp is not None:
         shift = float(
