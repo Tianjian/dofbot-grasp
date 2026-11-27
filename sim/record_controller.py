@@ -130,27 +130,10 @@ def main() -> int:
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")
             ]
             data.qpos[cube : cube + 3] = [seed[0], seed[1], 0.015]
-            # same start the trial uses: rank candidates analytically, then let the detector
-            # confirm on the rendered frame -- the analytic projection is tens of px off
+            # No pre-positioning: the flow parks, moves to the observation pose and waits
+            # there, exactly as the arm does. Positioning here would film a different strategy
+            # from the one being validated.
             det0 = trial.make_detector()
-            start = None
-            for cand in trial.visible_pose_candidates(seed):
-                for i in range(1, 6):
-                    data.qpos[
-                        model.jnt_qposadr[
-                            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")
-                        ]
-                    ] = np.radians(cand[i] - (90.0 if i < 5 else 135.0))
-                mujoco.mj_forward(model, data)
-                if det0(io.capture_wrist()) is not None:
-                    start = cand
-                    break
-            if start is None:
-                state["phase"] = "done ok=False no pose sees the cube"
-                for _ in range(int(FPS * 1.2)):
-                    grab()
-                print(f"  {state['seed']}: no pose sees the cube")
-                continue
             mujoco.mj_forward(model, data)
             state["phase"] = "start"
             grab()

@@ -16,16 +16,20 @@ import math
 import sys
 from pathlib import Path
 
+import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+# Every seed has to sit inside the observation window: the wrist camera at OBSERVE_POSE sees
+# x -40..54 mm, y 105..177 mm of the table, and the agreed contract is that the cube enters
+# that view. A seed outside it tests nothing but the timeout.
 SEEDS = [
-    (0.020, 0.140),
-    (-0.060, 0.140),
-    (0.060, 0.140),
-    (0.100, 0.140),  # every seed must be somewhere the wrist camera can actually see
+    (0.005, 0.138),
+    (0.022, 0.150),
+    (-0.018, 0.145),
+    (0.012, 0.128),
 ]
 
 
@@ -83,10 +87,36 @@ def make_detector(prefer_gpu: bool = True):
     return detect
 
 
-def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
+def seed_is_visible(seed) -> bool:
+    """Whether the cube is inside the observation window, which the contract requires."""
+    from dofbot_grasp.controller import OBSERVE_POSE
+    from dofbot_grasp.hardware import SimRobot
+    from real_camera import RealCamera
+
+    model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
+    data = mujoco.MjData(model)
+    addr = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")]
+    data.qpos[addr : addr + 3] = [seed[0], seed[1], 0.015]
+    for i in range(1, 6):
+        name = f"joint{i}"
+        data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)]] = (
+            math.radians(OBSERVE_POSE[i] - (90.0 if i < 5 else 135.0))
+        )
+    mujoco.mj_forward(model, data)
+    io = SimRobot(
+        model,
+        data,
+        img_w=640,
+        img_h=480,
+        real_cameras={"wrist_cam": RealCamera(ROOT / "calib" / "intrinsics_wrist.json")},
+    )
+    return make_detector()(io.capture_wrist()) is not None
+
+
+def run(seed, *, verbose: bool = False, use_gpu: bool = True) -> dict:
     import mujoco
 
-    from dofbot_grasp.controller import grasp_measured
+    from dofbot_grasp.controller import grasp_task
     from dofbot_grasp.hardware import SimRobot
 
     model = mujoco.MjModel.from_xml_path(str(ROOT / "sim" / "dofbot_se.xml"))
@@ -105,28 +135,10 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
     jadr = data.qpos
     cube = model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_free")]
     jadr[cube : cube + 3] = [seed[0], seed[1], 0.015]
-    # start where the camera can actually see the cube. The analytic search only ranks
-    # candidates -- the projection is good to tens of pixels -- so each one is rendered and
-    # the detector decides, which is what a real search would do.
+    # No pre-positioning: the flow starts at PARK, moves to the observation pose and waits
+    # there. Positioning it in advance would be a second, different strategy, and the trial
+    # would then be measuring something the arm does not do.
     detector = make_detector(prefer_gpu=use_gpu)
-    start_pose = None
-    for cand in visible_pose_candidates(seed):
-        for i in range(1, 6):
-            jadr[
-                model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}")]
-            ] = math.radians(cand[i] - (90.0 if i < 5 else 135.0))
-        mujoco.mj_forward(model, data)
-        if detector(io.capture_wrist()) is not None:
-            start_pose = cand
-            break
-    if start_pose is None:
-        return {
-            "ok": False,
-            "reason": "no pose sees the cube",
-            "seed": seed,
-            "lift_mm": 0.0,
-            "drift_mm": 0.0,
-        }
     mujoco.mj_forward(model, data)
 
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")
@@ -144,11 +156,17 @@ def run(seed, *, verbose: bool = False, use_gpu: bool = False) -> dict:
         if tag in ("VERIFY", "HOLD"):
             seen.setdefault("lifted", float(data.xpos[cube_body][2]))
 
-    result = grasp_measured(
+    import json as _json
+
+    _intr = _json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
+    result = grasp_task(
         io,
         detector,
         on_stage=on_stage,
         log=print if verbose else None,
+        intr=_intr,
+        watch_timeout_s=8.0,
+        hold_s=0.2,
     )
     end_z = float(data.xpos[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "cube")][2])
     # Prefer the height sampled while the cube was held; fall back to the end state for flows
@@ -192,6 +210,13 @@ def main() -> int:
     ap.add_argument("--json", default=None, help="write the per-seed results here")
     args = ap.parse_args()
 
+    for s in SEEDS:
+        if not seed_is_visible(s):
+            print(
+                f"seed {s} is outside the observation window -- the contract says the cube"
+                f" must be in the wrist camera's view at OBSERVE_POSE"
+            )
+            return 2
     rows = [run(s, verbose=args.verbose, use_gpu=args.detector == "sam2") for s in SEEDS]
     wins = sum(r["ok"] for r in rows)
     rate = wins / len(rows)
