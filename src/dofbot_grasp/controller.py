@@ -171,6 +171,29 @@ def _ik_to_tip(io, target_xyz, *, tol: float = 0.012) -> bool:
     return bool(float(np.linalg.norm(np.asarray(target_xyz, float) - tip)) < 3 * tol)
 
 
+def measure_cube(io, detect: Callable, *, log: Callable | None = None) -> dict | None:
+    """The cube's table position and yaw from a single frame, with no motion.
+
+    Separate from the grasp so the arm can be asked what it sees without any of the
+    consequences: the safest first question to ask of real hardware, and the gate the caller
+    uses to decide whether a viewpoint is worth grasping from.
+    """
+    say = log or (lambda _m: None)
+    fitted = _fit_once(io, detect)
+    if fitted is None:
+        return None
+    if fitted["iou"] < 0.6:
+        say(f"fit too weak (iou {fitted['iou']:.2f})")
+        return None
+    x, y = float(fitted["centre_m"][0]), float(fitted["centre_m"][1])
+    yaw = float(fitted["yaw_rad"])
+    say(
+        f"cube at ({x * 1000:.0f}, {y * 1000:.0f}) mm, iou {fitted['iou']:.2f}, "
+        f"yaw {np.degrees(yaw):.0f} deg"
+    )
+    return {"x": x, "y": y, "yaw": yaw, "iou": float(fitted["iou"])}
+
+
 def grasp_measured(
     io,
     detect: Callable,
@@ -296,3 +319,67 @@ def search_poses(
                 scored.append((float(np.hypot(u - 0.4 * width, v - 0.6 * height)), pose))
     scored.sort(key=lambda kv: kv[0])
     return [p for _d, p in scored[:limit]]
+
+
+def camera_look_point(pose: dict[int, float]) -> np.ndarray | None:
+    """Where the wrist camera's optical axis meets the table.
+
+    The camera sits 57 mm off the tool axis and 95 mm above the fingertip, so it looks at a
+    point well *beyond* the fingertips rather than under them -- roughly 56 mm past the tip
+    when the tool axis is vertical. Planning a sweep from where the tip is therefore aims the
+    camera at empty desk; this returns the point that actually matters.
+    """
+    cam_c, cam_r = camera_pose(pose)
+    axis = -cam_r[:, 2]  # MuJoCo cameras look along -z
+    if axis[2] >= -0.05:
+        return None  # aimed at the horizon, not the desk
+    t = (GRASP.table_z_m - cam_c[2]) / axis[2]
+    if t <= 0:
+        return None
+    return cam_c + t * axis
+
+
+def observer_sweep(
+    *,
+    min_radius_m: float = 0.10,
+    max_radius_m: float = 0.30,
+    tip_clearance_m: float = 0.045,
+    limit: int = 12,
+) -> list[dict[int, float]]:
+    """Poses whose camera looks at the desk, chosen to cover it rather than to reach a point.
+
+    Different question from :func:`search_poses`, which needs to know where the cube is. Here
+    nothing is known yet, so the poses are picked so that their optical-axis footprints tile
+    the area the arm can work in.
+    """
+    candidates: list[tuple[float, float, dict[int, float]]] = []
+    for j1 in range(45, 136, 15):
+        for j2 in range(70, 111, 5):
+            for j3 in range(0, 51, 10):
+                j4 = j2 + j3 - 90.0
+                if not 0.0 <= j4 <= 180.0:
+                    continue
+                pose = {1: float(j1), 2: float(j2), 3: float(j3), 4: float(j4), 5: 135.0}
+                tip, _ = tip_and_axis(pose)
+                if tip[2] < tip_clearance_m:
+                    continue
+                hit = camera_look_point(pose)
+                if hit is None:
+                    continue
+                r = float(np.hypot(hit[0], hit[1]))
+                if not min_radius_m <= r <= max_radius_m:
+                    continue
+                candidates.append((r, float(np.arctan2(hit[1], hit[0])), pose))
+    if not candidates:
+        return []
+    # greedy coverage: take the pose aimed closest to each of a ring of target bearings
+    chosen: list[dict[int, float]] = []
+    for target_r in (min_radius_m + 0.06, max_radius_m - 0.05):
+        for k in range(4):
+            bearing = -np.pi + k * np.pi / 2
+            best = min(candidates, key=lambda c: abs(c[0] - target_r) + 0.25 * abs(c[1] - bearing))
+            if best[2] not in chosen:
+                chosen.append(best[2])
+            if len(chosen) >= limit:
+                return chosen
+    return chosen

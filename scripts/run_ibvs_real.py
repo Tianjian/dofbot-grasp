@@ -1,15 +1,18 @@
 """Run the grasp on the real DOFBOT SE.
 
-Thin wrapper: the sequence itself lives in ``dofbot_grasp.controller.grasp_measured`` and the
-bus rules in ``dofbot_grasp.arm``, so this script only has to build the backend, report what
-it sees, and hand over.
+Thin wrapper: the sequence lives in ``dofbot_grasp.controller.grasp_measured`` and the bus
+rules in ``dofbot_grasp.arm``, so this script only builds the backend, finds the cube, and
+hands over.
 
-    python scripts/run_ibvs_real.py --dry-run     # measure and print, do not move
-    python scripts/run_ibvs_real.py               # measure, then grasp
+    python scripts/run_ibvs_real.py --dry-run        # report what it sees, move nothing
+    python scripts/run_ibvs_real.py --measure-only   # find it, measure it, stop
+    python scripts/run_ibvs_real.py                  # full grasp, observer monitor running
 
-Safety comes from the bus wrapper: it never reads inside the write guard, it polls until the
-joints stop moving rather than sleeping a fixed time, and it raises when a servo lags its
-command by more than ``SAFETY.max_servo_lag_deg`` -- which is what contact looks like.
+Finding the cube is the interesting part. The wrist camera sits 57 mm off the tool axis and
+95 mm above the fingertips, so it looks at a patch of desk roughly 56 mm beyond the tip; poses
+chosen by where the tip goes aim it at empty desk. The sweep is therefore planned from where
+the camera's optical axis lands, and the view it keeps is the one with the cube nearest the
+image centre -- a cube at the edge back-projects badly and cannot be fitted.
 """
 
 from __future__ import annotations
@@ -24,41 +27,54 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from dofbot_grasp.controller import camera_pose, grasp_measured, tip_and_axis  # noqa: E402
+from dofbot_grasp.controller import (  # noqa: E402
+    camera_pose,
+    grasp_measured,
+    measure_cube,
+    observer_sweep,
+    search_poses,
+    tip_and_axis,
+)
 from dofbot_grasp.hardware import SerialRobot  # noqa: E402
 from dofbot_grasp.params import CAMERAS, GRASP, JOINTS  # noqa: E402
 from dofbot_grasp.tracker import make_detector  # noqa: E402
 
 
-def sweep_poses() -> list[dict[int, float]]:
-    """Four poses that look down at the front of the desk.
-
-    Chosen by geometry, not by taste: the tool axis must point down (axis_z < -0.75) or the
-    wrist camera looks at the room instead of the table, and the fingertip must sit
-    100-250 mm up. With j2=90 the elbow gives those at j3=20, j4=20, and the four j1 values
-    sweep the front work area from left to right.
-    """
-    return [
-        {1: float(j1), 2: 90.0, 3: 20.0, 4: 20.0, 5: 135.0} for j1 in (60.0, 80.0, 100.0, 120.0)
-    ]
-
-
-def intr_path() -> Path:
-    return ROOT / CAMERAS.wrist_intrinsics
+def find_cube(robot, detector) -> dict | None:
+    """The view that frames the cube best, sweeping if it is not already in sight."""
+    seen = detector(robot.capture_wrist())
+    if seen is not None:
+        return seen
+    print("cube not visible from here; sweeping where the camera looks")
+    best = None
+    for cand in observer_sweep():
+        robot.command(cand, gripper=JOINTS.gripper_open_deg)
+        seen = detector(robot.capture_wrist())
+        if seen is None:
+            continue
+        off = float(np.hypot(seen["centre"][0] - 320.0, seen["centre"][1] - 240.0))
+        if best is None or off < best[0]:
+            best = (off, cand, seen)
+    if best is None:
+        return None
+    off, _cand, seen = best
+    print(f"best view {off:.0f} px from centre")
+    return seen
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true", help="measure and print, do not move")
-    ap.add_argument("--observer", default=None, help="observer camera device to watch")
+    ap.add_argument("--dry-run", action="store_true", help="report, do not move")
     ap.add_argument(
+        "--measures-only",
         "--measure-only",
+        dest="measure_only",
         action="store_true",
-        help="find and measure the cube, then stop before touching it",
+        help="find and measure, then stop before touching it",
     )
     args = ap.parse_args()
 
-    path = intr_path()
+    path = ROOT / CAMERAS.wrist_intrinsics
     if not path.exists():
         print(f"missing intrinsics: {path}")
         return 2
@@ -73,100 +89,82 @@ def main() -> int:
         print("pose (deg):", {k: round(v, 1) for k, v in pose.items()})
         print("fingertip (mm):", np.round(tip * 1000, 0), " tool axis:", np.round(axis, 2))
 
-        frame = robot.capture_wrist()
-        if frame is None:
-            print("no wrist camera frame")
-            return 2
-        det = detector(frame)
-        if det is None and args.dry_run:
-            print("cube not visible from the parked pose; a real run would sweep:")
-            for cand in sweep_poses():
-                print("   ", {k: round(v) for k, v in cand.items()})
-            return 1
+        det = find_cube(robot, detector)
         if det is None:
-            # A model-driven search cannot help here: it would need the cube's position,
-            # which is exactly what we are looking for. Sweep instead -- a few poses spread
-            # over the workspace, stop at the first that sees it.
-            print("cube not visible from here; sweeping the workspace")
-            for cand in sweep_poses():
-                robot.command(cand, gripper=JOINTS.gripper_open_deg)
-                det = detector(robot.capture_wrist())
-                if det is not None:
-                    print("found it from", {k: round(v, 1) for k, v in cand.items()})
-                    break
-            if det is None:
-                print("the sweep did not see the cube -- put it where the arm can reach")
-                return 1
-            pose = robot.read_joints()
-        est = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
+            print("no pose saw the cube -- put it where the arm can reach it")
+            return 1
+        pose = robot.read_joints()
+        rough = robot.unproject_to_table(det["centre"][0], det["centre"][1], GRASP.table_z_m)
         cam_c, _ = camera_pose(pose)
         print(
             f"cube pixel {tuple(round(v) for v in det['centre'])}, "
-            f"back-projected ({est[0] * 1000:.0f}, {est[1] * 1000:.0f}) mm"
+            f"back-projected ({rough[0] * 1000:.0f}, {rough[1] * 1000:.0f}) mm"
         )
         print(
-            f"camera at ({cam_c[0] * 1000:.0f}, {cam_c[1] * 1000:.0f}, {cam_c[2] * 1000:.0f}) mm, "
-            f"intrinsics fx {intr['fy']:.0f}"
+            f"camera at ({cam_c[0] * 1000:.0f}, {cam_c[1] * 1000:.0f}, "
+            f"{cam_c[2] * 1000:.0f}) mm, fx {intr['fy']:.0f}"
         )
+
+        # Seeing the cube is not measuring it: from where it was first noticed the silhouette
+        # may be half out of frame or grazing. Try the poses that should frame it properly and
+        # can also reach it, and keep the first whose fit is good enough to act on.
+        measured = None
+        for cand in search_poses(intr, (float(rough[0]), float(rough[1])), limit=8):
+            robot.command(cand, gripper=JOINTS.gripper_open_deg)
+            measured = measure_cube(robot, detector, log=print)
+            if measured is not None:
+                print(f"measured from { {k: round(v) for k, v in cand.items()} }")
+                break
+        if measured is None:
+            print("no pose gave a usable fit; refusing to move on a guess")
+            return 1
 
         if args.dry_run:
             print("dry run: nothing moved")
             return 0
-
-        # the observer camera is the referee: it notices someone reaching in, or a camera
-        # that has quietly stopped delivering, neither of which the wrist view can see
-        monitor = None
-        if not args.measure_only:
-            from dofbot_grasp.safety import ObserverMonitor, SafetyAbort
-
-            semantic = None
-            try:
-                from dofbot_grasp.observer_vision import ObserverVision
-
-                semantic = ObserverVision(ROOT)
-                print(
-                    "observer semantics:",
-                    "GPU (face + cube segmentation)"
-                    if semantic.state.available
-                    else "unavailable, pixel check only",
-                )
-            except Exception as exc:  # no torch, no GPU, no matter
-                print(f"observer semantics unavailable ({type(exc).__name__}); pixel check only")
-            monitor = ObserverMonitor(
-                robot.capture_observer,
-                evidence_dir=ROOT / "logs" / "observer",
-                semantic=semantic,
+        if args.measure_only:
+            print(
+                f"measured ({measured['x'] * 1000:.0f}, {measured['y'] * 1000:.0f}) mm, "
+                f"iou {measured['iou']:.2f} -- stopping before the grasp"
             )
-            monitor.start()
+            return 0
 
-            # the GPU pass runs here, between stages, not in the monitor thread
-            def _guard() -> None:
+        monitor = None
+        from dofbot_grasp.safety import ObserverMonitor, SafetyAbort
+
+        semantic = None
+        try:
+            from dofbot_grasp.observer_vision import ObserverVision
+
+            semantic = ObserverVision(ROOT)
+            print(
+                "observer semantics:",
+                "GPU" if semantic.state.available else "unavailable, pixel check only",
+            )
+        except Exception as exc:
+            print(f"observer semantics unavailable ({type(exc).__name__})")
+        monitor = ObserverMonitor(
+            robot.capture_observer, evidence_dir=ROOT / "logs" / "observer", semantic=semantic
+        )
+        monitor.start()
+
+        def guard() -> None:
+            monitor.raise_if_alarmed()
+            if semantic is not None and semantic.state.available:
+                frame = robot.capture_observer()
+                if frame is not None:
+                    monitor.check_semantics(frame)
                 monitor.raise_if_alarmed()
-                if semantic is not None and semantic.state.available:
-                    frame = robot.capture_observer()
-                    if frame is not None:
-                        monitor.check_semantics(frame)
-                    monitor.raise_if_alarmed()
-
-            abort_check = _guard
-            print("observer monitor running; any alarm aborts before the next stage")
 
         try:
-            result = grasp_measured(
-                robot,
-                detector,
-                log=print,
-                abort_check=abort_check if monitor else None,
-                measure_only=args.measure_only,
-            )
+            result = grasp_measured(robot, detector, log=print, abort_check=guard)
         except SafetyAbort as exc:
             print(f"ABORTED by the observer monitor: {exc}")
             return 3
         finally:
-            if monitor is not None:
-                monitor.stop()
+            monitor.stop()
         print("result:", result)
-        if monitor is not None and monitor.alarm:
+        if monitor.alarm:
             print("observer alarm during the run:", monitor.alarm)
         return 0 if result.get("ok") else 1
     finally:
