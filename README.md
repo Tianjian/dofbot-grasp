@@ -169,13 +169,15 @@ acceptance tests, and abort/rollback rules.
 
 ## Status and limitations
 
-- Simulation is validated; the real arm is now driven over serial and the joint
-  polarity, look pose, image→joint gains and gripper direction are measured
-  ([`docs/hardware-notes.md`](docs/hardware-notes.md)). **The grasp itself has not
-  been executed yet**: the camera→TCP offset is uncalibrated. Parameters marked
-  `[待实测]` in the runbook still need a bench measurement.
-- The reference motion is scripted, not visually servoed. A closed loop on the
-  cube's image offset is the next step for hardware.
+- **The arm grasps.** One run measured the cube at `(-17, 169) mm` with IOU 0.93, descended,
+  closed, and verified from the jaws: they stopped 2.5° short of the position they reach on
+  nothing, and the cube stayed in them for 60 s. The recording is
+  [`sim/real_grasp_success.mp4`](sim/real_grasp_success.mp4).
+- The flow is `PARK → OBSERVE → WATCH → MEASURE → ALIGN → APPROACH → DESCEND → CLOSE → LIFT →
+  VERIFY → HOLD`, one controller for both the simulation and the arm
+  ([`docs/task-flow.md`](docs/task-flow.md)).
+- What is still open: the rate. Simulation gives 4 of 10 through the same flow, and the
+  hardware has one confirmed grasp; repeating across positions is the next measurement.
 - `contact_count` in simulation comes from MuJoCo contacts; on hardware it comes
   from the bus (and there is no force sensing).
 - Perception assumes a face-on cube for the pinhole range estimate; a table-plane

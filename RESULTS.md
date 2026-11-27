@@ -16,7 +16,11 @@ simulation rows from `sim/dofbot_se.xml` driven by `sim/grasp_trial.py`.
 | Gripper direction | servo 6 **~20 deg = jaws apart**, **~140 deg = shut** | video verified |
 | Fingertip offset | **~56 mm** below the TCP point | contact test |
 | Top-down grasp envelope | radius <= 239 mm at 0 mm height, <= 173 mm at 140 mm, none above 150 mm | kinematics + collision sweep |
-| First successful grasp | cube held and lifted clear of the desk, servo read-back unchanged after 3 s | `calib/grasp_success.png` |
+| First successful grasp (old, scripted) | cube held and lifted clear of the desk, servo read-back unchanged after 3 s | `calib/grasp_success.png` |
+| **First grasp by the shared controller** | measured `(-17, 169) mm, iou 0.93`; jaws closed to **137.127 deg** against a free-close reference of **139.664**, so the fingers were blocked; cube held 60 s | `sim/real_grasp_success.mp4` |
+| Cube detection on hardware | SAM2 segmenter, 2.1 s a frame at 512 px on an RTX 2060 | measured |
+| Measurement accuracy on hardware | **iou 0.91-0.97** with the 30 mm prior fitted to the segment | measured |
+| Grasp-height bias needed | **+20 mm** above the modelled grasp height, then a 4 mm search down | measured |
 
 Two bus behaviours that silently corrupt data, both reproduced:
 
@@ -122,6 +126,31 @@ grasp pose is out of reach. The trial's pre-positions are chosen to satisfy both
 The graspable region was mapped by sweeping the kinematics with collision filtering:
 grasp points split evenly about y (49 % at y > 0) with the dense core at
 x in [-80, 80] mm, y in [-140, -60] mm on the -y side and the mirror on the +y side.
+
+## The flow on the arm
+
+```
+PARK -> OBSERVE -> WATCH -> choose a reachable view -> MEASURE -> ALIGN
+     -> APPROACH -> DESCEND (searching the grasp depth) -> CLOSE -> LIFT
+     -> VERIFY (from the jaws) -> HOLD 60 s   or   -> PARK
+```
+
+Five things the hardware taught that the simulation could not:
+
+1. **the fingers shorten when open.** The real gripper is a parallel linkage; its fingers are
+   short at the open position and long at the closed one, while the model assumes the closed
+   length. A descent aimed at the modelled grasp height therefore arrived with the fingers
+   above the cube and the jaws closed on air. A **+20 mm bias** with a 4 mm search down, judged
+   by the jaws, fixed it.
+2. **the jaws are the grasp sensor.** Nothing the camera sees at the grasp height can tell a
+   grasp from a miss; the jaw stopping 2.5 deg short of its free-close position can.
+3. **the arm settles 1.4 deg below a commanded j2**, which at a 26.6 deg field moves the
+   camera's view by ~33 px -- enough to lose a cube at the edge of the 70 mm observation
+   window. The pose is now commanded with the residual added.
+4. **the observer's motion alarm cannot tell the arm from a person**, because the arm is the
+   largest change in the frame. Pixel motion is off during a run; the face check stays.
+5. **the simulation's grasp rate is pessimistic**: 4 of 10 with the same flow, partly because
+   its fingers are full length when open and sweep the cube aside.
 
 ## What is still open
 
