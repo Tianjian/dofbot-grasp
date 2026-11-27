@@ -65,6 +65,17 @@ The sweep is four poses that look down at the front of the desk (j2 90, j3 20, j
 {60,80,100,120}), chosen because the tool axis must point down or the wrist camera looks at
 the room.
 
+**Where the cube has to be.** The arm reaches about 175 mm from its base. The object used to
+identify the target sat roughly twice that far away -- near the observer camera rather than
+the arm -- so no sweep could see it. Estimated from its apparent size (about 100 px across for
+a 30 mm cube at the observer's 640 px focal length) it was ~190 mm from the observer, which is
+~350 mm from the arm base. It has to be inside the swept area in front of the arm.
+
+**Which face matters.** The target's camera-facing side carries a printed sticker and reads as
+near-white; only its other faces are yellow. The wrist camera looks down, so it sees the top
+face -- if the top face is a sticker the colour detector will not fire at all. Turn the cube so
+a yellow face is up.
+
 **The colour detector false-positives on the real desk.** It fired on a pale patch of the
 paper covering the table during a sweep, and on a yellow bag strap in another view. The cube
 must be the only yellow object in the swept area, and the fit's IoU gate (0.6) is what
