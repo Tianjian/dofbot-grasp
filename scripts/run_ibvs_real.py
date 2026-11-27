@@ -132,14 +132,15 @@ def main() -> int:
             here = np.array([measured["x"], measured["y"], 0.015])
             observer_at = np.array(obs_intr.get("position_m", [0.41, 0.35, 0.025]))
             expect = float(np.linalg.norm(here - observer_at))
-            ratio = expect / obs_dist
-            verdict = "agrees" if 0.6 < ratio < 1.7 else "DISAGREES"
+            # The apparent size gives a distance from the observer with no extrinsics at all,
+            # which is why it is worth printing. Turning it into a verdict needs the observer's
+            # own position, and that mount is nominal -- so this stays information until
+            # somebody calibrates it. (Calibrating it from a chessboard is scripted:
+            # scripts/calibrate_observer_extrinsics.py.)
             print(
                 f"observer check: cube {side:.0f} px wide -> {obs_dist * 1000:.0f} mm from the "
-                f"observer; the wrist measurement implies {expect * 1000:.0f} mm ({verdict})"
+                f"observer; the wrist position sits {expect * 1000:.0f} mm from the nominal mount"
             )
-            if verdict == "DISAGREES":
-                print("  one of the two estimates is wrong -- move the cube and re-measure")
         else:
             print("observer check: cube not measurable in the observer view")
 
