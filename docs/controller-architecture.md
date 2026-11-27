@@ -1,3 +1,13 @@
+## Two rules this project holds to
+
+1. **One controller, one vision stack.** The simulation and the robot run the same
+   `controller.grasp_measured`, and it sees through the same GPU segmenter
+   (`dofbot_grasp.tracker.SamCubeDetector`). A simulated run that used a different detector
+   would be validating a different system; if the segmenter changes, both paths change with it.
+2. **Simulation first.** Nothing reaches the hardware until it has passed the simulation gate
+   (`sim/grasp_trial.py --min-rate 0.75`). The gate is the only thing standing between a
+   plausible-looking change and a moving arm.
+
 # Controller architecture
 
 One sequence, two backends. The point of the split is that the phases are written once

@@ -48,7 +48,7 @@ def real_wrist_intrinsics() -> dict:
     return json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
 
 
-def make_detector(prefer_gpu: bool = False):
+def make_detector(prefer_gpu: bool = True):
     """Detector for the simulated frames.
 
     SAM2 is available with ``--detector sam2`` where a GPU and torch exist; the CI runner
@@ -174,7 +174,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-rate", type=float, default=0.75)
     ap.add_argument("--verbose", action="store_true")
-    ap.add_argument("--detector", choices=["colour", "sam2"], default="colour")
+    ap.add_argument("--detector", choices=["sam2", "colour"], default="sam2")
     ap.add_argument(
         "--jaw-offset",
         type=float,

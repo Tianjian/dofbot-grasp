@@ -82,3 +82,41 @@ def test_camera_roll_is_recorded():
     """The roll is a measured quantity, not a placeholder."""
     assert MOUNT.roll_deg is not None
     assert -180.0 <= MOUNT.roll_deg <= 180.0
+
+
+def test_projection_handles_batches_and_the_mujoco_convention():
+    """The real backend projects whole cubes, and in MuJoCo's -z convention.
+
+    Both faults were invisible without an arm attached: single-point-only raised "size 8 is
+    different from 3" from inside the fit, and an OpenCV-convention projection would have
+    mirrored every pixel about the image centre.
+    """
+    from dofbot_grasp.controller import project_points
+
+    intr = json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
+    C = np.array([0.0, 0.15, 0.15])
+    R = np.eye(3)  # looking down -z, straight at the table
+    points = np.array(
+        [
+            [0.0, 0.15, 0.0],  # straight below the camera
+            [0.03, 0.15, 0.0],  # to +x, which must appear to the right
+            [0.0, 0.12, 0.0],  # to -y, which must appear lower
+        ]
+    )
+    uv = project_points(C, R, intr, points)
+    assert uv.shape == (3, 2)
+    # centre
+    assert uv[0, 0] == pytest.approx(intr["cx"], abs=6.0)
+    assert uv[0, 1] == pytest.approx(intr["cy"], abs=6.0)
+    # +x is to the right of centre, not mirrored to the left
+    assert uv[1, 0] > uv[0, 0] + 20
+    # -y appears below centre (image y grows downward)
+    assert uv[2, 1] > uv[0, 1] + 20
+
+
+def test_projection_marks_points_behind_the_camera():
+    from dofbot_grasp.controller import project_points
+
+    intr = json.loads((ROOT / "calib" / "intrinsics_wrist.json").read_text())
+    uv = project_points(np.zeros(3), np.eye(3), intr, np.array([[0.0, 0.0, 0.5]]))
+    assert np.isnan(uv[0]).all()

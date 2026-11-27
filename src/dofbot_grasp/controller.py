@@ -383,3 +383,30 @@ def observer_sweep(
             if len(chosen) >= limit:
                 return chosen
     return chosen
+
+
+def project_points(C, R, intr: dict, points_m) -> np.ndarray:
+    """Base-frame point(s) -> pixel(s), MuJoCo convention (optical axis -z).
+
+    A free function so it can be tested without a robot: the real backend's version of this
+    was wrong in two ways -- single point only, and mirrored about the image centre -- and
+    neither could be seen until an arm was attached.
+    """
+    pts = np.atleast_2d(np.asarray(points_m, float))
+    local = (pts - np.asarray(C, float)) @ np.asarray(R, float)
+    depth = -local[:, 2]
+    fx, fy = float(intr["fx"]), float(intr["fy"])
+    cx, cy = float(intr["cx"]), float(intr["cy"])
+    dist = np.asarray(intr.get("dist", [0.0, 0.0]), float).ravel()
+    k1 = float(dist[0]) if dist.size > 0 else 0.0
+    k2 = float(dist[1]) if dist.size > 1 else 0.0
+    out = np.full((local.shape[0], 2), np.nan)
+    for i in range(local.shape[0]):
+        if depth[i] <= 1e-6:
+            continue
+        xn = local[i, 0] / depth[i]
+        yn = -local[i, 1] / depth[i]  # image y grows downward
+        r2 = xn * xn + yn * yn
+        radial = 1.0 + k1 * r2 + k2 * r2 * r2
+        out[i] = (cx + fx * xn * radial, cy + fy * yn * radial)
+    return out

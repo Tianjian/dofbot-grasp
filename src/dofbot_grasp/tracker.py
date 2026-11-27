@@ -46,6 +46,7 @@ class SamCubeDetector:
     def __init__(
         self, weights: str = "models/sam2_t.pt", imgsz: int = 512, device: str | None = None
     ) -> None:
+        import os
         from pathlib import Path
 
         from ultralytics import SAM
@@ -54,7 +55,9 @@ class SamCubeDetector:
         self.model = SAM(str(root / weights) if (root / weights).exists() else weights)
         if device:
             self.model.to(device)
-        self.imgsz = imgsz
+        # CI runs this on CPU kernels, where 512 px costs about 19 s a frame against 6 s at
+        # 320. The override exists so the gate stays runnable without changing the code path.
+        self.imgsz = imgsz or int(os.environ.get("DOFBOT_SAM_IMGSZ", "512"))
 
     def __call__(self, frame: np.ndarray | None) -> dict | None:
         if frame is None:

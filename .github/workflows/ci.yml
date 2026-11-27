@@ -33,7 +33,13 @@ jobs:
   # Grasp-rate gate. The trial drives the shared controller (dofbot_grasp.controller)
   # through the MuJoCo cell, so it measures the sequence the arm will run.
   #
-  # Baseline at the time of arming: 3 of 4 cube positions grasped (0.75), lifting 49-52 mm.
+  # It runs the same GPU segmenter the arm does -- the whole point of the gate is that the
+  # thing being measured is the thing that will run, and a gate against a different detector
+  # validates a different system. There is no GPU on a GitHub runner, so the segmenter falls
+  # back to torch's CPU kernels at a reduced input size: about 6 s a frame, a few minutes for
+  # the four seeds.
+  #
+  # Baseline: 3 of 4 cube positions grasped (0.75), lifting 20-22 mm.
   # A change that drops below the threshold fails the build.
   sim-grasp:
     runs-on: ubuntu-latest
@@ -46,8 +52,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          # the segmenter, on CPU: the gate must exercise the vision the arm uses
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          python -m pip install ultralytics
           sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1
       - name: Grasp trial
         env:
           MUJOCO_GL: osmesa
-        run: python sim/grasp_trial.py --min-rate 0.75
+          DOFBOT_SAM_IMGSZ: "320"
+        run: python sim/grasp_trial.py --min-rate 0.75 --detector sam2

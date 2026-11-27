@@ -297,40 +297,14 @@ class SerialRobot:
         return ctrl.camera_pose(self.read_joints())
 
     def project(self, point_m: np.ndarray, pose: dict[int, float] | None = None):
-        """Base-frame point(s) -> pixel(s), in the MuJoCo camera convention.
-
-        Two things this has to get right. It must accept an ``(N, 3)`` array: the 30 mm prior
-        projects a whole cube at a time and a single-point-only version threw "size 8 is
-        different from 3" from inside the fit. And it must use MuJoCo's convention, because
-        ``cv2.projectPoints`` assumes OpenCV's (+z forward) and ``camera_pose`` returns -z --
-        mixing them mirrors the image about its centre.
-        """
+        """Base-frame point(s) -> pixel(s); see controller.project_points for the convention."""
         import importlib
 
         ctrl = importlib.import_module("dofbot_grasp.controller")
         C, R = ctrl.camera_pose(self.read_joints() if pose is None else pose)
-        pts = np.atleast_2d(np.asarray(point_m, float))
         single = np.asarray(point_m, float).ndim == 1
-        local = (pts - C) @ R
-        depth = -local[:, 2]  # MuJoCo cameras look along -z
-        intr = self._intrinsics()
-        dist = np.array(intr["dist"], float).reshape(-1, 1)
-        k1 = float(dist[0, 0]) if len(dist) > 0 else 0.0
-        k2 = float(dist[1, 0]) if len(dist) > 1 else 0.0
-        out = []
-        for i in range(local.shape[0]):
-            if depth[i] <= 1e-6:
-                out.append((np.nan, np.nan))
-                continue
-            xn = local[i, 0] / depth[i]
-            yn = -local[i, 1] / depth[i]  # image y grows downward
-            r2 = xn * xn + yn * yn
-            radial = 1.0 + k1 * r2 + k2 * r2 * r2
-            out.append(
-                (intr["cx"] + intr["fx"] * xn * radial, intr["cy"] + intr["fy"] * yn * radial)
-            )
-        arr = np.array(out, float)
-        return (float(arr[0, 0]), float(arr[0, 1])) if single else arr
+        uv = ctrl.project_points(C, R, self._intrinsics(), point_m)
+        return (float(uv[0, 0]), float(uv[0, 1])) if single else uv
 
     def unproject_to_table(self, u: float, v: float, z_plane: float) -> np.ndarray | None:
         import importlib
