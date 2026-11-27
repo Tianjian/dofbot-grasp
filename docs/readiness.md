@@ -71,8 +71,13 @@ the arm -- so no sweep could see it. Estimated from its apparent size (about 100
 a 30 mm cube at the observer's 640 px focal length) it was ~190 mm from the observer, which is
 ~350 mm from the arm base. It has to be inside the swept area in front of the arm.
 
-**Which face matters, and it is the good case.** The cube's top is yellow and its four sides
-carry white stickers. The wrist camera looks down, so it sees the yellow top and the colour
+**What the target actually looks like.** A 30 mm cube whose top face is plain yellow and whose
+four side faces each carry a different white sticker with a black line drawing -- a paper roll,
+chopsticks, a cigarette and a peach. The side patterns do not affect the wrist pipeline: the
+camera looks straight down and sees only the yellow top, and `cube_fit` matches silhouettes
+against the 30 mm prior, so which sticker is facing where is irrelevant to the measurement.
+They would matter only to a reader trying to identify the cube from the side, which is why the
+observer's cube check takes an explicit seed. The wrist camera looks down, so it sees the yellow top and the colour
 detector works normally.
 
 The observers see the opposite. The fixed observer looks at the cube from the side, where
