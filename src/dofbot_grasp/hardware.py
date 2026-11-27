@@ -167,7 +167,10 @@ class SimRobot:
         for _ in range(max_steps):
             self.data.ctrl[:] = goal
             self._mj.mj_step(self.model, self.data)
-            change = float(np.abs(self.data.qpos[:5] - prev[:5]).max())
+            # Include the jaws. Settling on qpos[:5] returned while the fingers were still
+            # closing, so "close then lift" was really "close and lift at the same time" -- and
+            # a grasp that had not closed yet is a grasp that was never made.
+            change = float(np.abs(self.data.qpos[:7] - prev[:7]).max())
             prev = self.data.qpos.copy()
             still = still + 1 if change < 1e-5 else 0
             if still >= 50:
